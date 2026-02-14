@@ -123,6 +123,17 @@ def check_missing_api_keys():
             }
         elif 'GEMINI_API_KEY' in all_warnings:
             del all_warnings['GEMINI_API_KEY']
+    elif llm_preference.lower() == 'claude':
+        anthropic_key = os.getenv('ANTHROPIC_API_KEY', '').strip('"').strip()
+        if not anthropic_key or anthropic_key == '':
+            all_warnings['ANTHROPIC_API_KEY'] = {
+                "type": "missing_api_key",
+                "description": "Anthropic API Key",
+                "message": "ANTHROPIC_API_KEY not found in environment variables",
+                "solution": "Add ANTHROPIC_API_KEY to variables.env file"
+            }
+        elif 'ANTHROPIC_API_KEY' in all_warnings:
+            del all_warnings['ANTHROPIC_API_KEY']
     else:
         openai_key = os.getenv('OPENAI_API_KEY', '').strip('"').strip()
         if not openai_key or openai_key == '':
@@ -862,6 +873,12 @@ async def update_env_config(config: dict):
                 reinitialize_gemini_client()
             except ImportError:
                 print("Gemini client not available for reinitialization")
+            # Reinitialize Claude client if available
+            try:
+                from claude_executions import reinitialize_claude_client
+                reinitialize_claude_client()
+            except ImportError:
+                print("Claude client not available for reinitialization")
             
             # Re-check for missing API keys after update
             check_missing_api_keys()

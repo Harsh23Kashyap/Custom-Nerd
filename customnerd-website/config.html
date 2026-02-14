@@ -55,11 +55,14 @@
             --active: var(--text-color, #ffffff);
             --glow: rgba(0,123,255,0.12); /* subtle blue glow on OpenAI */
             --glow-2: rgba(40,167,69,0.12); /* subtle green glow on Gemini */
+            --glow-3: rgba(194,120,0,0.12); /* subtle orange glow on Claude */
             --accent-a: linear-gradient(135deg,var(--accent-text-color, #007bff),var(--accent-border-color, #0056b3)); /* blue for OpenAI */
             --accent-b: linear-gradient(135deg,#28a745,#20c997); /* green for Gemini */
+            --accent-c: linear-gradient(135deg,#c27800,#e69b00); /* orange for Claude */
 
             /* Size tokens */
             --w: 220px;
+            --w-3: 320px; /* width for 3-segment switch */
             --h: 46px;
             --r: 999px;
             --gap: 2px; /* micro gap between slider and pill edges */
@@ -77,7 +80,7 @@
             :root { --dur: 0ms; }
         }
 
-        /* Pill */
+        /* Pill (2-segment default) */
         .seg-switch {
             position: relative;
             width: var(--w);
@@ -87,13 +90,34 @@
             box-shadow: var(--shadow);
             outline: none;
             border: none;
-            padding: 0;             /* no extra padding */
+            padding: 0;
             display: grid;
-            grid-template-columns: 1fr 1fr; /* perfectly even halves */
+            grid-template-columns: 1fr 1fr;
             cursor: pointer;
             user-select: none;
             isolation: isolate;
             box-shadow: var(--shadow), var(--inner);
+        }
+
+        /* 3-segment pill */
+        .seg-switch-3 {
+            width: var(--w-3);
+            grid-template-columns: 1fr 1fr 1fr;
+        }
+
+        .seg-switch-3 .seg-slider {
+            width: calc(33.333% - var(--gap));
+            transform: translateX(0%);
+        }
+
+        .seg-switch-3[data-side="center"] .seg-slider {
+            transform: translateX(100%);
+            background: var(--accent-b);
+        }
+
+        .seg-switch-3[data-side="right"] .seg-slider {
+            transform: translateX(200%);
+            background: var(--accent-c);
         }
 
         /* Slider */
@@ -110,7 +134,7 @@
             box-shadow: 0 2px 6px rgba(0,0,0,.15);
         }
 
-        .seg-switch[data-side="right"] .seg-slider {
+        .seg-switch[data-side="right"]:not(.seg-switch-3) .seg-slider {
             transform: translateX(100%);
             background: var(--accent-b);
         }
@@ -147,17 +171,20 @@
 
         /* Active text color flips based on slider side */
         .seg-switch[data-side="left"] .seg-label--left,
-        .seg-switch[data-side="right"] .seg-label--right {
+        .seg-switch[data-side="right"] .seg-label--right,
+        .seg-switch[data-side="center"] .seg-label--center {
             color: var(--active);
             text-shadow: 0 1px 2px rgba(0,0,0,0.1);
         }
 
         /* Very subtle ambient glow that changes with side */
         .seg-switch[data-side="left"] { box-shadow: var(--shadow), 0 0 0 2px var(--glow) inset, var(--inner); }
-        .seg-switch[data-side="right"] { box-shadow: var(--shadow), 0 0 0 2px var(--glow-2) inset, var(--inner); }
+        .seg-switch[data-side="right"]:not(.seg-switch-3) { box-shadow: var(--shadow), 0 0 0 2px var(--glow-2) inset, var(--inner); }
+        .seg-switch-3[data-side="center"] { box-shadow: var(--shadow), 0 0 0 2px var(--glow-2) inset, var(--inner); }
+        .seg-switch-3[data-side="right"] { box-shadow: var(--shadow), 0 0 0 2px var(--glow-3) inset, var(--inner); }
 
         /* Animation for section transitions */
-        #openai_section, #gemini_section {
+        #openai_section, #gemini_section, #claude_section {
             transition: all 0.3s ease;
         }
 
@@ -840,27 +867,16 @@
         <form id="envConfigForm">
 
       
-         <!-- LLM Provider Toggle -->
+         <!-- AI Provider: 3-segment pill (old design extended) -->
          <div class="llm-provider-container">
-            <button
-                id="modelSwitch"
-                class="seg-switch"
-                type="button"
-                role="switch"
-                aria-checked="false"
-                data-side="left"
-                aria-label="Toggle model between OpenAI and Gemini"
-            >
+            <label for="modelSwitch" style="display: block; margin-bottom: 8px; font-weight: 600;">AI Provider</label>
+            <button type="button" id="modelSwitch" class="seg-switch seg-switch-3" aria-label="Select AI provider: OpenAI, Gemini, or Claude" data-side="left">
                 <div class="seg-slider" aria-hidden="true"></div>
-                <div class="seg-label seg-label--left">
-                    <i class="fas fa-robot"></i>
-                    <span>OpenAI</span>
-                </div>
-                <div class="seg-label seg-label--right">
-                    <i class="fas fa-brain"></i>
-                    <span>Gemini</span>
-                </div>
+                <div class="seg-label seg-label--left"><i class="fas fa-robot"></i><span>OpenAI</span></div>
+                <div class="seg-label seg-label--center"><i class="fas fa-brain"></i><span>Gemini</span></div>
+                <div class="seg-label seg-label--right"><i class="fas fa-leaf"></i><span>Claude</span></div>
             </button>
+            <input type="hidden" id="llm_provider" value="OpenAI">
         </div>
 
             <!-- OpenAI API Key Section -->
@@ -927,10 +943,40 @@
                 </div>
             </div>
 
+            <!-- Claude API Key Section -->
+            <div id="claude_section" style="display: none;">
+                <label for="ANTHROPIC_API_KEY">Claude (Anthropic) API Key <span style="color: #dc3545; font-size: 0.9em; font-weight: normal;">(Required)</span></label>
+                <a href="https://console.anthropic.com/settings/keys" target="_blank" style="margin-left: 10px; font-family: Arial, sans-serif; color: blue; text-decoration: underline;">Get API Key</a>
+                <span style="margin-left: 10px; font-family: Arial, sans-serif; color: gray; position: relative;">
+                    <i class="fas fa-info-circle" style="cursor: pointer;"></i>
+                    <span style="visibility: hidden; width: 250px; background-color: black; color: #fff; text-align: center; border-radius: 6px; padding: 5px 0; position: absolute; z-index: 1; bottom: 125%; left: 50%; margin-left: -125px; opacity: 0; transition: opacity 0.3s;">
+                        Get your Anthropic API key from the Anthropic Console. This is required for using Claude models.
+                    </span>
+                </span>
+                <script>
+                    document.querySelectorAll('#claude_section .fa-info-circle').forEach(function(icon) {
+                        icon.addEventListener('mouseover', function() {
+                            this.nextElementSibling.style.visibility = 'visible';
+                            this.nextElementSibling.style.opacity = '1';
+                        });
+                        icon.addEventListener('mouseout', function() {
+                            this.nextElementSibling.style.visibility = 'hidden';
+                            this.nextElementSibling.style.opacity = '0';
+                        });
+                    });
+                </script>
+                <div class="password-input-wrapper">
+                    <input type="password" id="ANTHROPIC_API_KEY" placeholder="Required - Please enter your Anthropic API key">
+                    <button type="button" class="visibility-toggle" onclick="toggleVisibilityById('ANTHROPIC_API_KEY', this)" aria-label="Show API key">
+                        <i class="fas fa-eye"></i>
+                    </button>
+                </div>
+            </div>
+
             <!-- Custom API Keys Section -->
             <div class="custom-api-keys-section" style="margin-top: 30px; border-top: 1px solid #ddd; padding-top: 20px;">
                 <h4>Custom API Keys (Optional)</h4>
-                <p style="color: #666; margin-bottom: 15px;">Add your own API keys with custom names. All API keys except OpenAI are optional.</p>
+                <p style="color: #666; margin-bottom: 15px;">Add your own API keys with custom names. All API keys except the selected provider are optional.</p>
                 
                 <!-- Predefined API Keys Section -->
                 <div class="predefined-api-keys" style="background: rgba(255, 255, 255, 0.08); backdrop-filter: blur(25px); border: 1px solid rgba(255, 255, 255, 0.15); padding: 24px; border-radius: 16px; margin-bottom: 24px; box-shadow: 0 8px 32px rgba(0, 0, 0, 0.06);">

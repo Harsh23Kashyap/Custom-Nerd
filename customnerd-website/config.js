@@ -1335,7 +1335,7 @@ async function loadEnvConfig() {
                         value: initialEnvConfig[trimmedKey],
                         isPredefined: true
                     });
-                } else if (trimmedKey !== 'OPENAI_API_KEY' && trimmedKey !== 'GEMINI_API_KEY' && trimmedKey !== 'LLM') {
+                } else if (trimmedKey !== 'OPENAI_API_KEY' && trimmedKey !== 'GEMINI_API_KEY' && trimmedKey !== 'ANTHROPIC_API_KEY' && trimmedKey !== 'LLM') {
                     // This is a custom API key
                     customApiKeys.push({
                         name: trimmedKey,
@@ -1349,9 +1349,10 @@ async function loadEnvConfig() {
         // Set LLM provider based on config
         setLLMProvider(llmProvider);
         
-        // Always set placeholders for both inputs first
+        // Always set placeholders for all provider inputs first
         const openaiInput = document.getElementById('OPENAI_API_KEY');
         const geminiInput = document.getElementById('GEMINI_API_KEY');
+        const claudeInput = document.getElementById('ANTHROPIC_API_KEY');
         
         if (openaiInput) {
             openaiInput.placeholder = 'Required - Please enter your OpenAI API key';
@@ -1359,16 +1360,22 @@ async function loadEnvConfig() {
         if (geminiInput) {
             geminiInput.placeholder = 'Required - Please enter your Gemini API key';
         }
+        if (claudeInput) {
+            claudeInput.placeholder = 'Required - Please enter your Anthropic API key';
+        }
         
-        // Load both API keys from the environment (preserve both)
-        // Use fallback to empty string if API key is not present
+        // Load all provider API keys from the environment (preserve all)
         if (openaiInput) {
             openaiInput.value = initialEnvConfig['OPENAI_API_KEY'] || '';
         }
         if (geminiInput) {
             geminiInput.value = initialEnvConfig['GEMINI_API_KEY'] || '';
         }
+        if (claudeInput) {
+            claudeInput.value = initialEnvConfig['ANTHROPIC_API_KEY'] || '';
+        }
         
+        // setLLMProvider already syncs hidden input and tab state
         // Render custom API keys (including predefined ones)
         renderCustomApiKeys();
     } catch (error) {
@@ -1711,22 +1718,23 @@ function removeCustomApiKey(index) {
 }
 
 async function updateEnvConfig() {
-    // Get the current LLM provider from the toggle
-    const llmToggle = document.getElementById('modelSwitch');
-    const currentProvider = llmToggle.dataset.side === 'right' ? 'Gemini' : 'OpenAI';
+    // Get the current LLM provider from the dropdown
+    const llmSelect = document.getElementById('llm_provider');
+    const currentProvider = llmSelect ? (llmSelect.value || 'OpenAI') : 'OpenAI';
     
     // Create the base config object with LLM provider
     const updatedEnvConfig = {
         LLM: currentProvider
     };
     
-    // Always add both API keys to preserve them (never delete existing keys)
-    // Use fallback to empty string if API key is not present or missing
+    // Always add all provider API keys to preserve them (never delete existing keys)
     const openaiInput = document.getElementById('OPENAI_API_KEY');
     const geminiInput = document.getElementById('GEMINI_API_KEY');
+    const claudeInput = document.getElementById('ANTHROPIC_API_KEY');
     
     updatedEnvConfig.OPENAI_API_KEY = openaiInput ? (openaiInput.value || '') : '';
     updatedEnvConfig.GEMINI_API_KEY = geminiInput ? (geminiInput.value || '') : '';
+    updatedEnvConfig.ANTHROPIC_API_KEY = claudeInput ? (claudeInput.value || '') : '';
     
     // Update custom API keys from the DOM
     customApiKeys.forEach((key, index) => {
@@ -1742,11 +1750,11 @@ async function updateEnvConfig() {
     });
 
     // Validate required fields based on current provider
-    const requiredFields = currentProvider === 'Gemini' ? ['GEMINI_API_KEY'] : ['OPENAI_API_KEY'];
+    const requiredFields = currentProvider === 'Gemini' ? ['GEMINI_API_KEY'] : (currentProvider === 'Claude' ? ['ANTHROPIC_API_KEY'] : ['OPENAI_API_KEY']);
     const missingFields = requiredFields.filter(field => !updatedEnvConfig[field] || updatedEnvConfig[field].trim() === '');
     
     if (missingFields.length > 0) {
-        const providerName = currentProvider === 'Gemini' ? 'Gemini' : 'OpenAI';
+        const providerName = currentProvider === 'Gemini' ? 'Gemini' : (currentProvider === 'Claude' ? 'Claude (Anthropic)' : 'OpenAI');
         showNotification('error', `Required ${providerName} API key is missing. Please enter your ${providerName} API key.`);
         return;
     }
@@ -1777,9 +1785,10 @@ function resetAllEnv() {
         // Set the LLM provider
         setLLMProvider(originalProvider);
         
-        // Always set placeholders for both inputs first
+        // Always set placeholders for all provider inputs first
         const openaiInput = document.getElementById('OPENAI_API_KEY');
         const geminiInput = document.getElementById('GEMINI_API_KEY');
+        const claudeInput = document.getElementById('ANTHROPIC_API_KEY');
         
         if (openaiInput) {
             openaiInput.placeholder = 'Required - Please enter your OpenAI API key';
@@ -1787,14 +1796,19 @@ function resetAllEnv() {
         if (geminiInput) {
             geminiInput.placeholder = 'Required - Please enter your Gemini API key';
         }
+        if (claudeInput) {
+            claudeInput.placeholder = 'Required - Please enter your Anthropic API key';
+        }
         
-        // Reset both API keys (preserve both)
-        // Use fallback to empty string if API key is not present
+        // Reset all provider API keys
         if (openaiInput) {
             openaiInput.value = initialEnvConfig.OPENAI_API_KEY || '';
         }
         if (geminiInput) {
             geminiInput.value = initialEnvConfig.GEMINI_API_KEY || '';
+        }
+        if (claudeInput) {
+            claudeInput.value = initialEnvConfig.ANTHROPIC_API_KEY || '';
         }
         
         // Reset custom API keys (including predefined ones)
@@ -1805,7 +1819,7 @@ function resetAllEnv() {
         ];
         
         for (const key in initialEnvConfig) {
-            if (key !== 'OPENAI_API_KEY' && key !== 'GEMINI_API_KEY' && key !== 'LLM' && initialEnvConfig.hasOwnProperty(key)) {
+            if (key !== 'OPENAI_API_KEY' && key !== 'GEMINI_API_KEY' && key !== 'ANTHROPIC_API_KEY' && key !== 'LLM' && initialEnvConfig.hasOwnProperty(key)) {
                 const isPredefined = predefinedKeys.includes(key);
                 customApiKeys.push({
                     name: key,
@@ -2974,19 +2988,16 @@ ensurePlaceholders();  // Ensure placeholders are set correctly
 
 // Add event listeners to maintain placeholders
 document.addEventListener('DOMContentLoaded', function() {
-    const llmToggle = document.getElementById('llm_toggle');
-    if (llmToggle) {
-        llmToggle.addEventListener('change', function() {
-            // Small delay to ensure DOM is updated
-            setTimeout(() => {
-                ensurePlaceholders();
-            }, 200);
+    const llmSelect = document.getElementById('llm_provider');
+    if (llmSelect) {
+        llmSelect.addEventListener('change', function() {
+            setTimeout(() => ensurePlaceholders(), 200);
         });
     }
     
-    // Add mutation observer to watch for input changes
     const openaiInput = document.getElementById('OPENAI_API_KEY');
     const geminiInput = document.getElementById('GEMINI_API_KEY');
+    const claudeInput = document.getElementById('ANTHROPIC_API_KEY');
     
     if (openaiInput) {
         openaiInput.addEventListener('focus', function() {
@@ -3010,6 +3021,19 @@ document.addEventListener('DOMContentLoaded', function() {
         geminiInput.addEventListener('blur', function() {
             if (!this.value || this.value === '') {
                 this.placeholder = 'Required - Please enter your Gemini API key';
+            }
+        });
+    }
+    
+    if (claudeInput) {
+        claudeInput.addEventListener('focus', function() {
+            if (!this.value || this.value === '') {
+                this.placeholder = 'Required - Please enter your Anthropic API key';
+            }
+        });
+        claudeInput.addEventListener('blur', function() {
+            if (!this.value || this.value === '') {
+                this.placeholder = 'Required - Please enter your Anthropic API key';
             }
         });
     }
@@ -3528,105 +3552,15 @@ document.addEventListener('DOMContentLoaded', function() {
     }
 });
 
-// Function to toggle LLM provider (OpenAI/Gemini)
+// Function to toggle LLM provider (no-op: provider is now set via dropdown; kept for compatibility)
 function toggleLLMProvider(event) {
-    // Prevent any default behavior
     if (event) {
         event.preventDefault();
         event.stopPropagation();
     }
-    
-    const toggle = document.getElementById('modelSwitch');
-    const openaiSection = document.getElementById('openai_section');
-    const geminiSection = document.getElementById('gemini_section');
-    const openaiInput = document.getElementById('OPENAI_API_KEY');
-    const geminiInput = document.getElementById('GEMINI_API_KEY');
-    const note = document.getElementById('llm_note');
-    
-    // First, ensure both inputs have their placeholders set
-    if (openaiInput) {
-        openaiInput.placeholder = 'Required - Please enter your OpenAI API key';
-    }
-    if (geminiInput) {
-        geminiInput.placeholder = 'Required - Please enter your Gemini API key';
-    }
-    
-    // Toggle the side
-    const currentSide = toggle.dataset.side;
-    const newSide = currentSide === 'left' ? 'right' : 'left';
-    toggle.dataset.side = newSide;
-    toggle.setAttribute('aria-checked', newSide === 'right' ? 'true' : 'false');
-    
-    // Dispatch custom event
-    toggle.dispatchEvent(new CustomEvent('model-change', {
-        bubbles: true,
-        detail: { value: newSide === 'right' ? 'Gemini' : 'OpenAI' }
-    }));
-    
-    if (newSide === 'right') {
-        // Switch to Gemini
-        openaiSection.style.display = 'none';
-        geminiSection.style.display = 'block';
-        
-        // Show note
-        if (note) {
-            note.style.display = 'block';
-            note.style.opacity = '0';
-            note.style.transform = 'translateY(-10px)';
-            setTimeout(() => {
-                note.style.opacity = '1';
-                note.style.transform = 'translateY(0)';
-            }, 50);
-            
-            // Hide note after 3 seconds
-            setTimeout(() => {
-                note.style.opacity = '0';
-                note.style.transform = 'translateY(-10px)';
-                setTimeout(() => {
-                    note.style.display = 'none';
-                }, 300);
-            }, 3000);
-        }
-        
-        // Ensure Gemini input is focused and placeholder is visible
-        setTimeout(() => {
-            if (geminiInput && (!geminiInput.value || geminiInput.value === '')) {
-                geminiInput.focus();
-                geminiInput.blur(); // This will show the placeholder
-            }
-        }, 100);
-    } else {
-        // Switch to OpenAI
-        geminiSection.style.display = 'none';
-        openaiSection.style.display = 'block';
-        
-        // Show note
-        if (note) {
-            note.style.display = 'block';
-            note.style.opacity = '0';
-            note.style.transform = 'translateY(-10px)';
-            setTimeout(() => {
-                note.style.opacity = '1';
-                note.style.transform = 'translateY(0)';
-            }, 50);
-            
-            // Hide note after 3 seconds
-            setTimeout(() => {
-                note.style.opacity = '0';
-                note.style.transform = 'translateY(-10px)';
-                setTimeout(() => {
-                    note.style.display = 'none';
-                }, 300);
-            }, 3000);
-        }
-        
-        // Ensure OpenAI input is focused and placeholder is visible
-        setTimeout(() => {
-            if (openaiInput && (!openaiInput.value || openaiInput.value === '')) {
-                openaiInput.focus();
-                openaiInput.blur(); // This will show the placeholder
-            }
-        }, 100);
+    const llmSelect = document.getElementById('llm_provider');
+    if (llmSelect) {
+        setLLMProvider(llmSelect.value || 'OpenAI');
     }
 }
 
@@ -3634,10 +3568,10 @@ function toggleLLMProvider(event) {
 function ensurePlaceholders() {
     const openaiInput = document.getElementById('OPENAI_API_KEY');
     const geminiInput = document.getElementById('GEMINI_API_KEY');
+    const claudeInput = document.getElementById('ANTHROPIC_API_KEY');
     
     if (openaiInput) {
         openaiInput.placeholder = 'Required - Please enter your OpenAI API key';
-        // Force placeholder to show if input is empty or missing
         if (!openaiInput.value || openaiInput.value === '') {
             openaiInput.focus();
             openaiInput.blur();
@@ -3645,10 +3579,16 @@ function ensurePlaceholders() {
     }
     if (geminiInput) {
         geminiInput.placeholder = 'Required - Please enter your Gemini API key';
-        // Force placeholder to show if input is empty or missing
         if (!geminiInput.value || geminiInput.value === '') {
             geminiInput.focus();
             geminiInput.blur();
+        }
+    }
+    if (claudeInput) {
+        claudeInput.placeholder = 'Required - Please enter your Anthropic API key';
+        if (!claudeInput.value || claudeInput.value === '') {
+            claudeInput.focus();
+            claudeInput.blur();
         }
     }
 }
@@ -3661,90 +3601,75 @@ function forcePlaceholderVisibility(inputElement) {
     }
 }
 
-// Function to set LLM provider based on value
+// Map data-side (3-segment pill) to provider name and back
+var LLM_SIDE_TO_PROVIDER = { left: 'OpenAI', center: 'Gemini', right: 'Claude' };
+var LLM_PROVIDER_TO_SIDE = { OpenAI: 'left', Gemini: 'center', Claude: 'right' };
+
+// Function to set LLM provider based on value (OpenAI, Gemini, or Claude)
 function setLLMProvider(provider) {
-    const toggle = document.getElementById('modelSwitch');
+    const norm = (provider === 'OpenAI' || provider === 'Gemini' || provider === 'Claude') ? provider : 'OpenAI';
+    const side = LLM_PROVIDER_TO_SIDE[norm];
     const openaiSection = document.getElementById('openai_section');
     const geminiSection = document.getElementById('gemini_section');
+    const claudeSection = document.getElementById('claude_section');
     const openaiInput = document.getElementById('OPENAI_API_KEY');
     const geminiInput = document.getElementById('GEMINI_API_KEY');
-    
-    // Always ensure both inputs have their placeholders set first
-    if (openaiInput) {
-        openaiInput.placeholder = 'Required - Please enter your OpenAI API key';
+    const claudeInput = document.getElementById('ANTHROPIC_API_KEY');
+    const hiddenInput = document.getElementById('llm_provider');
+    const modelSwitch = document.getElementById('modelSwitch');
+
+    if (hiddenInput) hiddenInput.value = norm;
+    if (modelSwitch && side) modelSwitch.setAttribute('data-side', side);
+
+    if (openaiInput) openaiInput.placeholder = 'Required - Please enter your OpenAI API key';
+    if (geminiInput) geminiInput.placeholder = 'Required - Please enter your Gemini API key';
+    if (claudeInput) claudeInput.placeholder = 'Required - Please enter your Anthropic API key';
+
+    if (openaiSection) openaiSection.style.display = (norm === 'OpenAI') ? 'block' : 'none';
+    if (geminiSection) geminiSection.style.display = (norm === 'Gemini') ? 'block' : 'none';
+    if (claudeSection) claudeSection.style.display = (norm === 'Claude') ? 'block' : 'none';
+
+    const focusInput = norm === 'OpenAI' ? openaiInput : (norm === 'Gemini' ? geminiInput : claudeInput);
+    setTimeout(function() {
+        if (focusInput && (!focusInput.value || focusInput.value === '')) {
+            focusInput.focus();
+            focusInput.blur();
+        }
+    }, 100);
+}
+
+// Cycle AI provider on seg-switch click (left -> center -> right -> left)
+function toggleLLMProvider(event) {
+    if (event) {
+        event.preventDefault();
+        event.stopPropagation();
     }
-    if (geminiInput) {
-        geminiInput.placeholder = 'Required - Please enter your Gemini API key';
-    }
-    
-    if (provider === 'Gemini') {
-        toggle.dataset.side = 'right';
-        toggle.setAttribute('aria-checked', 'true');
-        openaiSection.style.display = 'none';
-        geminiSection.style.display = 'block';
-        
-        // Ensure Gemini input shows placeholder if empty
-        setTimeout(() => {
-            if (geminiInput && (!geminiInput.value || geminiInput.value === '')) {
-                geminiInput.focus();
-                geminiInput.blur();
-            }
-        }, 100);
-    } else {
-        // Default to OpenAI
-        toggle.dataset.side = 'left';
-        toggle.setAttribute('aria-checked', 'false');
-        openaiSection.style.display = 'block';
-        geminiSection.style.display = 'none';
-        
-        // Ensure OpenAI input shows placeholder if empty
-        setTimeout(() => {
-            if (openaiInput && (!openaiInput.value || openaiInput.value === '')) {
-                openaiInput.focus();
-                openaiInput.blur();
-            }
-        }, 100);
-    }
+    var modelSwitch = document.getElementById('modelSwitch');
+    if (!modelSwitch) return;
+    var side = modelSwitch.getAttribute('data-side') || 'left';
+    var nextSide = (side === 'left') ? 'center' : (side === 'center') ? 'right' : 'left';
+    var nextProvider = LLM_SIDE_TO_PROVIDER[nextSide];
+    setLLMProvider(nextProvider);
 }
 
 
-// Initialize the modern toggle with keyboard support
+// Initialize 3-segment AI provider pill (click to cycle)
 function initModernToggle() {
-    const toggle = document.getElementById('modelSwitch');
-    
-    if (toggle) {
-        // Add click support
-        toggle.addEventListener('click', (e) => {
+    var modelSwitch = document.getElementById('modelSwitch');
+    if (modelSwitch) {
+        modelSwitch.addEventListener('click', function(e) {
             e.preventDefault();
             e.stopPropagation();
             toggleLLMProvider(e);
         });
-        
-        // Add keyboard support
-        toggle.addEventListener('keydown', (e) => {
-            const k = e.key;
-            if (k === ' ' || k === 'Enter') {
+        modelSwitch.addEventListener('keydown', function(e) {
+            if (e.key === ' ' || e.key === 'Enter') {
                 e.preventDefault();
-                e.stopPropagation();
                 toggleLLMProvider(e);
-            } else if (k === 'ArrowLeft') {
+            } else if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') {
                 e.preventDefault();
-                e.stopPropagation();
-                if (toggle.dataset.side === 'right') {
-                    toggleLLMProvider(e);
-                }
-            } else if (k === 'ArrowRight') {
-                e.preventDefault();
-                e.stopPropagation();
-                if (toggle.dataset.side === 'left') {
-                    toggleLLMProvider(e);
-                }
+                toggleLLMProvider(e);
             }
-        });
-        
-        // Add custom event listener for model changes
-        toggle.addEventListener('model-change', (e) => {
-            console.log('Model changed to:', e.detail.value);
         });
     }
 }

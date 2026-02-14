@@ -69,6 +69,11 @@ from gemini_executions import (
     generate_content_from_pdf_gemini, section_match_gemini, generate_final_response_gemini,
     generate_code_from_content_gemini, generate_prompt_from_content_gemini, _retryable_gemini_call
 )
+from claude_executions import (
+    determine_question_validity_claude, query_generation_claude, get_article_type_claude,
+    generate_content_from_pdf_claude, section_match_claude, generate_final_response_claude,
+    generate_code_from_content_claude, generate_prompt_from_content_claude, _retryable_claude_call
+)
 
 def get_llm_client():
     """
@@ -80,12 +85,13 @@ def get_llm_client():
     load_dotenv('variables.env', override=True)
     
     # Get the current LLM preference from environment
-    llm_preference = os.getenv('LLM', 'OpenAI').strip('"')
+    llm_preference = os.getenv('LLM', 'OpenAI').strip('"').strip()
     
     if llm_preference.lower() == 'gemini':
         return 'gemini'
-    else:
-        return 'openai'
+    if llm_preference.lower() == 'claude':
+        return 'claude'
+    return 'openai'
 
 """# Step1. Evaluate Question Validity
 We do not answer questions related to meal-planning or recipe creation.
@@ -107,8 +113,9 @@ def determine_question_validity(query):
     
     if llm_client == 'openai':
         return determine_question_validity_openai(query, DETERMINE_QUESTION_VALIDITY_PROMPT)
-    else:
-        return determine_question_validity_gemini(query, DETERMINE_QUESTION_VALIDITY_PROMPT)
+    if llm_client == 'claude':
+        return determine_question_validity_claude(query, DETERMINE_QUESTION_VALIDITY_PROMPT)
+    return determine_question_validity_gemini(query, DETERMINE_QUESTION_VALIDITY_PROMPT)
 
 
 """# If Valid Question
@@ -138,6 +145,8 @@ def query_generation(query):
     
     if llm_client == 'openai':
         general_query, query_contention = query_generation_openai(query, GENERAL_QUERY_PROMPT, QUERY_CONTENTION_PROMPT, QUERY_CONTENTION_ENABLED)
+    elif llm_client == 'claude':
+        general_query, query_contention = query_generation_claude(query, GENERAL_QUERY_PROMPT, QUERY_CONTENTION_PROMPT, QUERY_CONTENTION_ENABLED)
     else:
         general_query, query_contention = query_generation_gemini(query, GENERAL_QUERY_PROMPT, QUERY_CONTENTION_PROMPT, QUERY_CONTENTION_ENABLED)
 
@@ -351,8 +360,13 @@ def organize_database_articles(article: Any, user_query: str) -> Dict[str, Any]:
             temperature=0.1,
             response_format={"type": "json_object"},
         )
+    elif llm_client == 'claude':
+        extraction_raw = _retryable_claude_call(
+            system=extraction_prompt,
+            user=f"Article: {article_str}",
+            temperature=0.1,
+        )
     else:
-        # For Gemini, we need to use a different approach since it doesn't support JSON response format
         extraction_raw = _retryable_gemini_call(
             prompt=f"{extraction_prompt}\n\nArticle: {article_str}",
             temperature=0.1
@@ -385,6 +399,12 @@ def organize_database_articles(article: Any, user_query: str) -> Dict[str, Any]:
             ],
             temperature=0.0,
         ).strip().lower()
+    elif llm_client == 'claude':
+        pub_type_raw = _retryable_claude_call(
+            system=pub_type_prompt,
+            user=f"Article: {article_str}",
+            temperature=0.0,
+        ).strip().lower()
     else:
         pub_type_raw = _retryable_gemini_call(
             prompt=f"{pub_type_prompt}\n\nArticle: {article_str}",
@@ -407,6 +427,12 @@ def organize_database_articles(article: Any, user_query: str) -> Dict[str, Any]:
                 ],
                 temperature=0.4,
             )[:4000]
+        elif llm_client == 'claude':
+            article_data["abstract"] = _retryable_claude_call(
+                system=abstract_prompt,
+                user=f"Article: {article_str}",
+                temperature=0.4,
+            )[:4000]
         else:
             article_data["abstract"] = _retryable_gemini_call(
                 prompt=f"{abstract_prompt}\n\nArticle: {article_str}",
@@ -427,6 +453,12 @@ def organize_database_articles(article: Any, user_query: str) -> Dict[str, Any]:
             ],
             temperature=0.5,
         )
+    elif llm_client == 'claude':
+        article_data["summary"] = _retryable_claude_call(
+            system=summary_prompt,
+            user=f"Abstract: {article_data['abstract']}",
+            temperature=0.5,
+        )
     else:
         article_data["summary"] = _retryable_gemini_call(
             prompt=f"{summary_prompt}\n\nAbstract: {article_data['abstract']}",
@@ -442,6 +474,12 @@ def organize_database_articles(article: Any, user_query: str) -> Dict[str, Any]:
                     {"role": "system", "content": title_prompt},
                     {"role": "user",   "content": article_str[:2000]},
                 ],
+                temperature=0.6,
+            )[:300]
+        elif llm_client == 'claude':
+            article_data["title"] = _retryable_claude_call(
+                system=title_prompt,
+                user=f"Article: {article_str[:2000]}",
                 temperature=0.6,
             )[:300]
         else:
@@ -460,6 +498,12 @@ def organize_database_articles(article: Any, user_query: str) -> Dict[str, Any]:
                     {"role": "system", "content": author_prompt},
                     {"role": "user",   "content": article_str},
                 ],
+                temperature=0.2,
+            )[:500]
+        elif llm_client == 'claude':
+            article_data["author_name"] = _retryable_claude_call(
+                system=author_prompt,
+                user=f"Article: {article_str}",
                 temperature=0.2,
             )[:500]
         else:
@@ -660,6 +704,12 @@ def generate_summary(text: str):
             ],
             temperature=0.5,
         )
+    elif llm_client == 'claude':
+        summary = _retryable_claude_call(
+            system=summary_prompt,
+            user=f"Text: {text}",
+            temperature=0.5,
+        )
     else:
         summary = _retryable_gemini_call(
             prompt=f"{summary_prompt}\n\nText: {text}",
@@ -713,6 +763,12 @@ def relevance_classifier(article: Dict[str, Any], user_query: str) -> tuple[str,
                 {"role": "user",   "content": f"Question: {user_query}\n\nArticle Content: {content_for_relevance}"},
             ],
             temperature=0.1
+        )
+    elif llm_client == 'claude':
+        relevance_raw = _retryable_claude_call(
+            system=RELEVANCE_CLASSIFIER_PROMPT,
+            user=f"Question: {user_query}\n\nArticle Content: {content_for_relevance}",
+            temperature=0.1,
         )
     else:
         relevance_raw = _retryable_gemini_call(
@@ -819,8 +875,9 @@ def get_article_type(abstract):
     
     if llm_client == 'openai':
         return get_article_type_openai(abstract, ARTICLE_TYPE_PROMPT)
-    else:
-        return get_article_type_gemini(abstract, ARTICLE_TYPE_PROMPT)
+    if llm_client == 'claude':
+        return get_article_type_claude(abstract, ARTICLE_TYPE_PROMPT)
+    return get_article_type_gemini(abstract, ARTICLE_TYPE_PROMPT)
 
 
 
@@ -845,8 +902,10 @@ def generate_content_from_pdf(pdf_text, content_type="abstract", publication_typ
     if llm_client == 'openai':
         return generate_content_from_pdf_openai(pdf_text, content_type, publication_type, 
                                               ABSTRACT_EXTRACTION_PROMPT, REVIEW_SUMMARY_PROMPT, STUDY_SUMMARY_PROMPT)
-    else:
-        return generate_content_from_pdf_gemini(pdf_text, content_type, publication_type, 
+    if llm_client == 'claude':
+        return generate_content_from_pdf_claude(pdf_text, content_type, publication_type, 
+                                              ABSTRACT_EXTRACTION_PROMPT, REVIEW_SUMMARY_PROMPT, STUDY_SUMMARY_PROMPT)
+    return generate_content_from_pdf_gemini(pdf_text, content_type, publication_type, 
                                               ABSTRACT_EXTRACTION_PROMPT, REVIEW_SUMMARY_PROMPT, STUDY_SUMMARY_PROMPT)
 
 
@@ -937,6 +996,8 @@ def section_match(list_of_strings, required_titles):
         
         if llm_client == 'openai':
             relevant_sections = section_match_openai(list_of_strings, RELEVANT_SECTIONS_PROMPT)
+        elif llm_client == 'claude':
+            relevant_sections = section_match_claude(list_of_strings, RELEVANT_SECTIONS_PROMPT)
         else:
             relevant_sections = section_match_gemini(list_of_strings, RELEVANT_SECTIONS_PROMPT)
 
@@ -1253,8 +1314,9 @@ def generate_final_response(all_relevant_articles, query):
     
     if llm_client == 'openai':
         return generate_final_response_openai(all_relevant_articles, query, FINAL_RESPONSE_PROMPT, DISCLAIMER_TEXT)
-    else:
-        return generate_final_response_gemini(all_relevant_articles, query, FINAL_RESPONSE_PROMPT, DISCLAIMER_TEXT)
+    if llm_client == 'claude':
+        return generate_final_response_claude(all_relevant_articles, query, FINAL_RESPONSE_PROMPT, DISCLAIMER_TEXT)
+    return generate_final_response_gemini(all_relevant_articles, query, FINAL_RESPONSE_PROMPT, DISCLAIMER_TEXT)
 
 
 """### Write Final Output to Database"""
@@ -1521,8 +1583,9 @@ def generate_code_from_content(article_content: str, type: str):
     try:
         if llm_client == 'openai':
             return generate_code_from_content_openai(article_content, type, system_prompt_function_generator_list_search, system_prompt_function_generator_id_search)
-        else:
-            return generate_code_from_content_gemini(article_content, type, system_prompt_function_generator_list_search, system_prompt_function_generator_id_search)
+        if llm_client == 'claude':
+            return generate_code_from_content_claude(article_content, type, system_prompt_function_generator_list_search, system_prompt_function_generator_id_search)
+        return generate_code_from_content_gemini(article_content, type, system_prompt_function_generator_list_search, system_prompt_function_generator_id_search)
     except Exception as e:
         print(f"Error generating summary: {e}")
         return None
@@ -1551,6 +1614,6 @@ def generate_prompt_from_content(article_content: str, prompt_type: str, include
             system_prompts=system_prompts,
             include_rationale=include_rationale
         )
-    else:
-        # implement similar Gemini flow
-        return generate_prompt_from_content_gemini(article_content, prompt_type, system_prompts, include_rationale)
+    if llm_client == "claude":
+        return generate_prompt_from_content_claude(article_content, prompt_type, system_prompts, include_rationale)
+    return generate_prompt_from_content_gemini(article_content, prompt_type, system_prompts, include_rationale)
