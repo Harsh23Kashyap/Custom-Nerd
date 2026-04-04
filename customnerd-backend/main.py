@@ -530,7 +530,7 @@ def process_detailed_combined_logic(input_text, search_db, search_id, id_list, s
         try:
             collect_articles_func = globals().get('collect_articles')
             if collect_articles_func and callable(collect_articles_func):
-                db_articles = collect_articles_func(query_list)
+                db_articles = collect_articles_with_curl_fallback(collect_articles_func, query_list)
             else:
                 raise NameError("collect_articles function is not available")
         except (NameError, AttributeError) as e:
@@ -559,9 +559,11 @@ def process_detailed_combined_logic(input_text, search_db, search_id, id_list, s
     if search_id and id_list:
         loop.run_until_complete(send_update(unique_id, "Fetching articles by user passed IDs..."))
         try:
-            fetch_articles_func = globals().get('fetch_articles_by_ids')
+            fetch_articles_func = globals().get('fetch_articles_by_ids') or globals().get(
+                'fetch_articles_by_pmids'
+            )
             if fetch_articles_func and callable(fetch_articles_func):
-                id_articles = fetch_articles_func(list(id_list))
+                id_articles = run_with_rate_limit_curl_fallback(fetch_articles_func, list(id_list))
             else:
                 raise NameError("fetch_articles_by_ids function is not available")
         except (NameError, AttributeError) as e:

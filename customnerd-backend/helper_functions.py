@@ -31,6 +31,9 @@ import fitz
 import re
 import subprocess 
 import html
+import io
+import urllib.error
+import urllib.request
 
 # Information Retrieval
 from Bio import Entrez
@@ -1705,3 +1708,216 @@ def generate_prompt_from_content(article_content: str, prompt_type: str, include
     if llm_client == "ollama":
         return generate_prompt_from_content_ollama(article_content, prompt_type, system_prompts, include_rationale)
     return generate_prompt_from_content_gemini(article_content, prompt_type, system_prompts, include_rationale)
+
+
+# --------------------------------------------------------------------------- #
+# Rate-limit resilience: curl fallback (requests + urllib / Entrez)
+# --------------------------------------------------------------------------- #
+# Keeps logic out of user_search_apis.py / user_list_search.py. When an HTTP API
+# returns 429/409/503 or a JSON throttle payload (e.g. Stack Exchange), we retry
+# the same URL with curl. urllib.request.urlopen is patched for PubMed Entrez.
+
+_RATE_RESILIENCE_INSTALLED = False
+_ORIGINAL_REQUESTS_GET = None
+_ORIGINAL_URLOPEN = None
+
+RATE_LIMIT_HTTP_CODES = frozenset({429, 409, 503})
+
+
+def is_rate_limit_http_status(status_code: Optional[int]) -> bool:
+    if status_code is None:
+        return False
+    try:
+        return int(status_code) in RATE_LIMIT_HTTP_CODES
+    except (TypeError, ValueError):
+        return False
+
+
+def _json_body_indicates_rate_limit(resp: requests.Response) -> bool:
+    """
+    Some APIs return HTTP 200 with JSON describing throttling (Stack Exchange).
+    """
+    if resp.status_code in RATE_LIMIT_HTTP_CODES:
+        return True
+    if resp.status_code >= 400:
+        return is_rate_limit_http_status(resp.status_code)
+    ctype = (resp.headers.get("Content-Type") or "").lower()
+    if "json" not in ctype:
+        return False
+    try:
+        j = resp.json()
+    except Exception:
+        return False
+    if not isinstance(j, dict):
+        return False
+    if "error_id" not in j and "error_message" not in j and "error_name" not in j:
+        return False
+    msg = f"{j.get('error_message', '')} {j.get('error_name', '')}".lower()
+    if any(x in msg for x in ("throttle", "too many requests", "rate limit", "quota")):
+        return True
+    eid = j.get("error_id")
+    if eid is not None and int(eid) in (429, 502):
+        return True
+    return False
+
+
+class CurlBackedResponse:
+    """Minimal requests.Response-like object for bodies fetched via curl."""
+
+    def __init__(self, text: str, url: str, status_code: int = 200):
+        self.text = text
+        self.content = text.encode("utf-8", errors="replace")
+        self.status_code = status_code
+        self.headers = {}
+        self.url = url
+        self.encoding = "utf-8"
+
+    def raise_for_status(self) -> None:
+        if self.status_code >= 400:
+            err = requests.HTTPError(f"HTTP {self.status_code} for {self.url}")
+            err.response = self  # type: ignore[attr-defined]
+            raise err
+
+    def json(self, **kwargs):
+        return json.loads(self.text)
+
+
+def curl_fetch_url_text(url: str, timeout: int = 120) -> str:
+    """GET a URL with curl (no shell). Returns decoded text; empty string on failure."""
+    cmd = [
+        "curl",
+        "-sS",
+        "-L",
+        "-m",
+        str(timeout),
+        "--compressed",
+        "-H",
+        "User-Agent: CustomNerd/1.0 (+https://localhost; rate-limit fallback)",
+        url,
+    ]
+    try:
+        proc = subprocess.run(
+            cmd,
+            capture_output=True,
+            text=True,
+            errors="replace",
+            timeout=timeout + 20,
+        )
+    except subprocess.TimeoutExpired:
+        logging.warning("[curl_fallback] timeout for %s", url[:160])
+        return ""
+    if proc.returncode != 0:
+        logging.warning(
+            "[curl_fallback] curl exit %s for %s stderr=%s",
+            proc.returncode,
+            url[:120],
+            (proc.stderr or "")[:240],
+        )
+        return ""
+    return proc.stdout or ""
+
+
+def _prepare_get_url(url: str, params: Optional[Dict[str, Any]]) -> str:
+    if not params:
+        return url
+    prep = requests.PreparedRequest()
+    prep.prepare_url(url, params)
+    return prep.url
+
+
+def requests_get_with_curl_fallback(url, params=None, **kwargs):
+    """
+    GET via requests; on rate-limit status or JSON throttle, retry the same URL with curl.
+    """
+    if _ORIGINAL_REQUESTS_GET is None:
+        raise RuntimeError("install_rate_limit_curl_resilience() must be called first")
+    resp = _ORIGINAL_REQUESTS_GET(url, params=params, **kwargs)
+    need_curl = _json_body_indicates_rate_limit(resp)
+    if not need_curl:
+        return resp
+
+    full_url = getattr(resp, "url", None) or _prepare_get_url(url, params)
+    tmo = kwargs.get("timeout")
+    curl_timeout = 120
+    if isinstance(tmo, (int, float)):
+        curl_timeout = min(300, int(tmo) + 20)
+
+    logging.warning(
+        "[rate_limit] retrying via curl (status=%s) %s",
+        resp.status_code,
+        full_url[:120],
+    )
+    text = curl_fetch_url_text(full_url, timeout=curl_timeout)
+    if text:
+        return CurlBackedResponse(text, full_url, 200)
+    return resp
+
+
+def _patched_requests_get(url, params=None, **kwargs):
+    return requests_get_with_curl_fallback(url, params=params, **kwargs)
+
+
+def _urlopen_target_to_url(target) -> str:
+    if isinstance(target, str):
+        return target
+    if hasattr(target, "full_url"):
+        return target.full_url
+    return target.get_full_url()
+
+
+def _patched_urlopen(*args, **kwargs):
+    try:
+        return _ORIGINAL_URLOPEN(*args, **kwargs)
+    except urllib.error.HTTPError as e:
+        if e.code not in RATE_LIMIT_HTTP_CODES:
+            raise
+        url = _urlopen_target_to_url(args[0])
+        logging.warning("[rate_limit] urllib HTTP %s; curl fallback %s", e.code, url[:120])
+        data = curl_fetch_url_text(url, timeout=120).encode("utf-8", errors="replace")
+        return io.BytesIO(data)
+
+
+def install_rate_limit_curl_resilience(force: bool = False) -> None:
+    """
+    Patch requests.get and urllib.request.urlopen so rate-limited HTTP responses
+    retry the same URL via curl. Idempotent.
+    """
+    global _RATE_RESILIENCE_INSTALLED, _ORIGINAL_REQUESTS_GET, _ORIGINAL_URLOPEN
+    if _RATE_RESILIENCE_INSTALLED and not force:
+        return
+    if _ORIGINAL_REQUESTS_GET is None:
+        _ORIGINAL_REQUESTS_GET = requests.get
+    if _ORIGINAL_URLOPEN is None:
+        _ORIGINAL_URLOPEN = urllib.request.urlopen
+    requests.get = _patched_requests_get
+    urllib.request.urlopen = _patched_urlopen
+    # Biopython Entrez does `from urllib.request import urlopen`; rebind to patched callable.
+    try:
+        import Bio.Entrez as _bio_entrez
+
+        _bio_entrez.urlopen = urllib.request.urlopen
+    except Exception:
+        pass
+    _RATE_RESILIENCE_INSTALLED = True
+    logging.info("Rate-limit curl resilience active (requests.get, urllib.request.urlopen)")
+
+
+def run_with_rate_limit_curl_fallback(fn, *args, **kwargs):
+    """
+    Call any user-defined function (e.g. collect_articles or fetch_articles_by_ids)
+    after ensuring curl resilience is installed. Use when user modules must stay unchanged.
+    """
+    install_rate_limit_curl_resilience()
+    return fn(*args, **kwargs)
+
+
+def collect_articles_with_curl_fallback(collect_fn, query_list, *args, **kwargs):
+    """Same as run_with_rate_limit_curl_fallback but reads clearly at call sites."""
+    return run_with_rate_limit_curl_fallback(collect_fn, query_list, *args, **kwargs)
+
+
+if os.getenv("RATE_LIMIT_CURL_RESILIENCE", "1").lower() in ("1", "true", "yes", "on"):
+    try:
+        install_rate_limit_curl_resilience()
+    except Exception as _rate_res_err:
+        logging.warning("Rate-limit curl resilience not installed: %s", _rate_res_err)

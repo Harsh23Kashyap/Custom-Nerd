@@ -1,7 +1,8 @@
 import os
+import json
 from helper_functions import *
 
-def refine_prompts(query_list):
+def clean_query(query_list):
     """
     Cleans and normalizes a list of query inputs into a flat list of unique strings.
     
@@ -10,29 +11,13 @@ def refine_prompts(query_list):
     
     Returns:
     - list: A cleaned, flattened, and unique list of strings with extra spaces and newlines removed.
+   Input: ['{ "expanded_queries": ["q1", "q2", ...] }']
+    Output: ["q1", "q2", ...]
     """
-    def flatten_and_clean(item):
-        if isinstance(item, list):
-            result = []
-            for subitem in item:
-                result.extend(flatten_and_clean(subitem))
-            return result
-        else:
-            if not isinstance(item, str):
-                item = str(item)
-            return [line.strip() for line in item.split('\n') if line.strip()]
-
-    # Flatten and clean the list
-    cleaned_list = []
-    for element in query_list:
-        cleaned_list.extend(flatten_and_clean(element))
-    
-    # Remove duplicates while preserving order
-    seen = set()
-    unique_cleaned_list = []
-    for item in cleaned_list:
-        if item not in seen:
-            seen.add(item)
-            unique_cleaned_list.append(item)
-    
-    return unique_cleaned_list
+    try:
+        # grab the first element and load JSON
+        data = json.loads(query_list[0])
+        return [q.strip() for q in data.get("expanded_queries", []) if q]
+    except Exception as e:
+        print(f"[Error] Could not parse queries: {e}")
+        return []
