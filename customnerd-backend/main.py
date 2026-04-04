@@ -24,6 +24,7 @@ import json5
 import logging
 import os
 import shutil
+from pathlib import Path
 
 #Sim search
 from sklearn.feature_extraction.text import TfidfVectorizer
@@ -103,80 +104,97 @@ safe_import_module("user_search_apis", "from user_search_apis import *", "Normal
 def check_missing_api_keys():
     """
     Check for missing API keys and add them to the warnings system.
+
+    When ``variables.env`` exists next to ``main.py``, required keys are validated from that
+    file via ``dotenv_values`` (not only ``os.environ``). Otherwise removing a key from the file
+    would still look "set" if it remained in the process environment (shell, IDE, etc.).
     """
-    import os
-    from dotenv import load_dotenv
-    load_dotenv('variables.env', override=True)
-    
-    # Get current LLM preference
-    llm_preference = os.getenv('LLM', 'OpenAI').strip('"').strip()
-    
-    # Check required API keys based on LLM preference
-    if llm_preference.lower() == 'gemini':
-        gemini_key = os.getenv('GEMINI_API_KEY', '').strip('"').strip()
-        if not gemini_key or gemini_key == '':
-            all_warnings['GEMINI_API_KEY'] = {
+    from dotenv import dotenv_values, load_dotenv
+
+    env_path = Path(__file__).resolve().parent / "variables.env"
+    load_dotenv(str(env_path), override=True)
+
+    file_vars: dict = {}
+    if env_path.is_file():
+        file_vars = {k: v for k, v in dotenv_values(str(env_path)).items()}
+
+    def _strip_val(raw) -> str:
+        if raw is None:
+            return ""
+        return str(raw).strip().strip('"').strip("'")
+
+    def _key_ok(name: str) -> bool:
+        """True if this key is satisfied for warning purposes."""
+        if env_path.is_file():
+            if name not in file_vars:
+                return False
+            return bool(_strip_val(file_vars.get(name)))
+        return bool(_strip_val(os.getenv(name, "")))
+
+    # LLM: prefer value from variables.env when declared there
+    if env_path.is_file() and "LLM" in file_vars and file_vars["LLM"] is not None:
+        llm_preference = _strip_val(file_vars.get("LLM")) or "OpenAI"
+    else:
+        llm_preference = _strip_val(os.getenv("LLM")) or "OpenAI"
+
+    if llm_preference.lower() == "gemini":
+        if not _key_ok("GEMINI_API_KEY"):
+            all_warnings["GEMINI_API_KEY"] = {
                 "type": "missing_api_key",
                 "description": "Gemini API Key",
-                "message": "GEMINI_API_KEY not found in environment variables",
-                "solution": "Add GEMINI_API_KEY to variables.env file"
+                "message": "GEMINI_API_KEY missing or empty in variables.env",
+                "solution": "Add GEMINI_API_KEY to variables.env file",
             }
-        elif 'GEMINI_API_KEY' in all_warnings:
-            del all_warnings['GEMINI_API_KEY']
-    elif llm_preference.lower() == 'claude':
-        anthropic_key = os.getenv('ANTHROPIC_API_KEY', '').strip('"').strip()
-        if not anthropic_key or anthropic_key == '':
-            all_warnings['ANTHROPIC_API_KEY'] = {
+        elif "GEMINI_API_KEY" in all_warnings:
+            del all_warnings["GEMINI_API_KEY"]
+    elif llm_preference.lower() == "claude":
+        if not _key_ok("ANTHROPIC_API_KEY"):
+            all_warnings["ANTHROPIC_API_KEY"] = {
                 "type": "missing_api_key",
                 "description": "Anthropic API Key",
-                "message": "ANTHROPIC_API_KEY not found in environment variables",
-                "solution": "Add ANTHROPIC_API_KEY to variables.env file"
+                "message": "ANTHROPIC_API_KEY missing or empty in variables.env",
+                "solution": "Add ANTHROPIC_API_KEY to variables.env file",
             }
-        elif 'ANTHROPIC_API_KEY' in all_warnings:
-            del all_warnings['ANTHROPIC_API_KEY']
-    elif llm_preference.lower() == 'ollama':
-        # Ollama runs locally — no API key required. Optionally warn if base URL looks unreachable.
-        for key in ('OPENAI_API_KEY', 'GEMINI_API_KEY', 'ANTHROPIC_API_KEY'):
-            if key in all_warnings and all_warnings[key].get('type') == 'missing_api_key':
+        elif "ANTHROPIC_API_KEY" in all_warnings:
+            del all_warnings["ANTHROPIC_API_KEY"]
+    elif llm_preference.lower() == "ollama":
+        for key in ("OPENAI_API_KEY", "GEMINI_API_KEY", "ANTHROPIC_API_KEY"):
+            if key in all_warnings and all_warnings[key].get("type") == "missing_api_key":
                 del all_warnings[key]
-        ollama_base_url = os.getenv('OLLAMA_BASE_URL', 'http://localhost:11434').strip('"').strip()
-        if not ollama_base_url:
-            all_warnings['OLLAMA_BASE_URL'] = {
-                "type": "missing_api_key",
-                "description": "Ollama Base URL",
-                "message": "OLLAMA_BASE_URL is not set; defaulting to http://localhost:11434",
-                "solution": "Add OLLAMA_BASE_URL=http://localhost:11434 to variables.env, or leave unset for default"
-            }
-        elif 'OLLAMA_BASE_URL' in all_warnings:
-            del all_warnings['OLLAMA_BASE_URL']
+        if env_path.is_file():
+            if "OLLAMA_BASE_URL" in file_vars and not _strip_val(file_vars.get("OLLAMA_BASE_URL")):
+                all_warnings["OLLAMA_BASE_URL"] = {
+                    "type": "missing_api_key",
+                    "description": "Ollama Base URL",
+                    "message": "OLLAMA_BASE_URL is empty in variables.env",
+                    "solution": "Set OLLAMA_BASE_URL=http://localhost:11434 in variables.env",
+                }
+            elif "OLLAMA_BASE_URL" in all_warnings:
+                del all_warnings["OLLAMA_BASE_URL"]
+        else:
+            ollama_base_url = _strip_val(os.getenv("OLLAMA_BASE_URL", "http://localhost:11434"))
+            if not ollama_base_url:
+                all_warnings["OLLAMA_BASE_URL"] = {
+                    "type": "missing_api_key",
+                    "description": "Ollama Base URL",
+                    "message": "OLLAMA_BASE_URL is not set; defaulting to http://localhost:11434",
+                    "solution": "Add OLLAMA_BASE_URL=http://localhost:11434 to variables.env, or leave unset for default",
+                }
+            elif "OLLAMA_BASE_URL" in all_warnings:
+                del all_warnings["OLLAMA_BASE_URL"]
     else:
-        openai_key = os.getenv('OPENAI_API_KEY', '').strip('"').strip()
-        if not openai_key or openai_key == '':
-            all_warnings['OPENAI_API_KEY'] = {
+        if not _key_ok("OPENAI_API_KEY"):
+            all_warnings["OPENAI_API_KEY"] = {
                 "type": "missing_api_key",
                 "description": "OpenAI API Key",
-                "message": "OPENAI_API_KEY not found in environment variables",
-                "solution": "Add OPENAI_API_KEY to variables.env file"
+                "message": "OPENAI_API_KEY missing or empty in variables.env",
+                "solution": "Add OPENAI_API_KEY to variables.env file",
             }
-        elif 'OPENAI_API_KEY' in all_warnings:
-            del all_warnings['OPENAI_API_KEY']
-    
-    # Check for other optional but commonly used API keys
-    optional_keys = {
-        'ENTREZ_EMAIL': 'Entrez Email (required for PubMed)'
-    }
-    
-    for key, description in optional_keys.items():
-        key_value = os.getenv(key, '').strip('"').strip()
-        if not key_value or key_value == '':
-            all_warnings[key] = {
-                "type": "missing_api_key",
-                "description": description,
-                "message": f"{key} not found in environment variables",
-                "solution": f"Add {key} to variables.env file"
-            }
-        elif key in all_warnings:
-            del all_warnings[key]
+        elif "OPENAI_API_KEY" in all_warnings:
+            del all_warnings["OPENAI_API_KEY"]
+
+    # ENTREZ_EMAIL is not checked here: PubMed-by-PMID is optional (e.g. NewsNerd does not use it).
+    # If someone passes PMIDs without ENTREZ_EMAIL, user_list_search logs at fetch time.
 
 # Check for missing API keys on startup
 check_missing_api_keys()

@@ -295,6 +295,65 @@ def run_setup_wizard(base_dir, logger):
 
 
 
+def ensure_feedparser(venv_python, backend_dir, logger):
+    """
+    user_search_apis imports feedparser for RSS (AWS / Azure / CloudFest).
+    Install into the venv if missing so main.py can import without UI warnings.
+    """
+    try:
+        subprocess.run(
+            [str(venv_python), "-c", "import feedparser"],
+            cwd=str(backend_dir),
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            timeout=20,
+            check=True,
+        )
+        logger.log("✅ feedparser available (normal search / RSS)", Colors.GREEN)
+        return True
+    except (subprocess.CalledProcessError, subprocess.TimeoutExpired, FileNotFoundError):
+        pass
+
+    logger.log(
+        "⚠️ feedparser missing — installing (required for cloud RSS in user_search_apis)...",
+        Colors.YELLOW,
+    )
+    try:
+        result = subprocess.run(
+            [
+                str(venv_python),
+                "-m",
+                "pip",
+                "install",
+                "feedparser>=6.0.11",
+            ],
+            cwd=str(backend_dir),
+            capture_output=True,
+            text=True,
+            timeout=180,
+        )
+        if result.returncode != 0:
+            logger.log(
+                f"⚠️ pip install feedparser failed (server will still start): "
+                f"{(result.stderr or result.stdout or '')[:400]}",
+                Colors.YELLOW,
+            )
+            return False
+        subprocess.run(
+            [str(venv_python), "-c", "import feedparser"],
+            cwd=str(backend_dir),
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            timeout=20,
+            check=True,
+        )
+        logger.log("✅ feedparser installed successfully", Colors.GREEN)
+        return True
+    except Exception as e:
+        logger.log(f"⚠️ feedparser install error (server will still start): {e}", Colors.YELLOW)
+        return False
+
+
 def run_health_checks(backend_dir, venv_python, logger):
     logger.log("🏥 Running Pre-flight Health Checks...", Colors.BLUE)
     
@@ -384,8 +443,11 @@ def run_health_checks(backend_dir, venv_python, logger):
             return False
         except Exception as e:
             logger.log(f"❌ Error installing uvicorn: {e}", Colors.RED)
-        logger.log("   Please run 'python3 setup.py' to fix dependencies.", Colors.YELLOW)
-        return False
+            logger.log("   Please run 'python3 setup.py' to fix dependencies.", Colors.YELLOW)
+            return False
+
+    # 3b. feedparser for user_search_apis (RSS)
+    ensure_feedparser(venv_python, backend_dir, logger)
 
     # 4. Check if Port 8000 is free; if busy, try to kill and retry
     if not is_port_free(8000):
