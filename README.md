@@ -3,7 +3,10 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Python Version](https://img.shields.io/badge/python-3.8%2B-blue.svg)](https://www.python.org/downloads/)
 [![FastAPI](https://img.shields.io/badge/FastAPI-0.68.0-green.svg)](https://fastapi.tiangolo.com/)
-[![OpenAI](https://img.shields.io/badge/OpenAI-GPT-blueviolet.svg)](https://openai.com/)
+[![OpenAI](https://img.shields.io/badge/OpenAI-GPT-412991?logo=openai&logoColor=white)](https://openai.com/)
+[![Google Gemini](https://img.shields.io/badge/Google-Gemini-4285F4?logo=google&logoColor=white)](https://ai.google.dev/)
+[![Anthropic Claude](https://img.shields.io/badge/Anthropic-Claude-D4A27F?logo=anthropic&logoColor=white)](https://www.anthropic.com/)
+[![Ollama](https://img.shields.io/badge/Ollama-local-111111?logo=ollama&logoColor=white)](https://ollama.com/)
 
 ![Custom-Nerd Logo](customnerd-website/assets/custom_nerd_default_logo.png)
 

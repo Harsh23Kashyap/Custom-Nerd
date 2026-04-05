@@ -1713,7 +1713,9 @@ def generate_prompt_from_content(article_content: str, prompt_type: str, include
 # --------------------------------------------------------------------------- #
 # Rate-limit resilience: curl fallback (requests + urllib / Entrez)
 # --------------------------------------------------------------------------- #
-
+# Keeps logic out of user_search_apis.py / user_list_search.py. When an HTTP API
+# returns 429/409/503 or a JSON throttle payload (e.g. Stack Exchange), we retry
+# the same URL with curl. urllib.request.urlopen is patched for PubMed Entrez.
 
 _RATE_RESILIENCE_INSTALLED = False
 _ORIGINAL_REQUESTS_GET = None
