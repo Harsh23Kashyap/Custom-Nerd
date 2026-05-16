@@ -8,48 +8,31 @@
 
 This repository is maintained collaboratively by the research team below. All members contributed to the research, system design, evaluation, and/or writing of this work.
 
-| # | Author | Affiliation | Contact |
-|---|--------|-------------|---------|
-| 1 | Harsh Kashyap | Thapar Institute of Engineering and Technology (lead author) | harsh.kashyap2001@gmail.com |
-| 2 | Shela Wu | New York University | shela.wu@nyu.edu |
-| 3 | Fengcheng Jiang | New York University | fj2080@nyu.edu |
-| 4 | Euijae Kim | New York University | ek3955@nyu.edu |
-| 5 | Elyse Herman | McGill University | Elyse.herman@desjardins.com |
-| 6 | Jacob Dickman | Rutgers University | — |
-| 7 | Daksh Agarwal | Guru Gobind Singh Indraprastha University | daksh.10819051623@ipu.ac.in |
-| 8 | Dennis Shasha | New York University (faculty advisor) | shasha@cs.nyu.edu |
-
-### Abstract
-
-> **CustomNerd** is a modular framework for building domain-specific expertise systems from a shared set of core components. It supports multiple domains and has been used to deploy expertise-driven systems in nutrition, wireless technology, and finance. The framework ingests domain-specific data sources supplied by the user and processes search results from those sources.
->
-> The system comprises five main components:
->
-> 1. **Query Conversion** — converts user input into structured queries for application-specific databases of validated articles  
-> 2. **Extraction** — retrieves relevant data from external databases using those queries  
-> 3. **Filtering and Classification** — identifies and ranks relevant documents among retrieved results  
-> 4. **Reliability Assessment** — evaluates document quality (e.g., statistical validity, conflict-of-interest checks)  
-> 5. **Response Generation** — produces answers from sources deemed relevant and reliable  
->
-> Additional capabilities include questionnaire generation from a user query, user document upload, and support for multiple large language model (LLM) engines. The manuscript describes building an expertise-driven application through a running example, documents the architecture, reviews related work, and compares a cloud-computing deployment against LangChain and agentic baselines.
->
-> **Keywords:** modular AI; expertise-based question answering; retrieval-augmented generation; domain-specific AI systems; reliability assessment; LLM integration
+| # | Author | Affiliation | Role | Contact |
+|---|--------|-------------|------|---------|
+| 1 | Harsh Kashyap | Thapar Institute of Engineering and Technology | Lead author | harsh.kashyap2001@gmail.com |
+| 2 | Shela Wu | New York University | Co-author | shela.wu@nyu.edu |
+| 3 | Fengcheng Jiang | New York University | Co-author | fj2080@nyu.edu |
+| 4 | Euijae Kim | New York University | Co-author | ek3955@nyu.edu |
+| 5 | Elyse Herman | McGill University | Co-author | Elyse.herman@desjardins.com |
+| 6 | Jacob Dickman | Rutgers University | Co-author | — |
+| 7 | Daksh Agarwal | Guru Gobind Singh Indraprastha University | Co-author | daksh.10819051623@ipu.ac.in |
+| 8 | Dennis Shasha | New York University | Faculty advisor | shasha@cs.nyu.edu |
 
 ### How to cite this work
 
-The manuscript is in preparation. If you use this repository before publication, please cite or acknowledge the full author team:
+The manuscript is in preparation (not yet submitted). If you use this repository before publication, please cite or acknowledge the full research team.
 
 ```bibtex
-@misc{kashyap2026customnerd,
-  title        = {CustomNerd: A Framework and Tool for Fast Deployment of Production-Ready Expertise-based Question Answering Systems},
-  author       = {Kashyap, Harsh and Wu, Shela and Jiang, Fengcheng and Kim, Euijae and Herman, Elyse and Dickman, Jacob and Agarwal, Daksh and Shasha, Dennis},
-  year         = {2026},
-  howpublished = {Research software repository},
-  note         = {Manuscript in preparation (not yet submitted). New York University.}
+@unpublished{CustomNerd2026,
+  title  = {CustomNerd: A Framework and Tool for Fast Deployment of Production-Ready Expertise-based Question Answering Systems},
+  author = {Kashyap, Harsh and Wu, Shela and Jiang, Fengcheng and Kim, Euijae and Herman, Elyse and Dickman, Jacob and Agarwal, Daksh and Shasha, Dennis},
+  year   = {2026},
+  note   = {Manuscript in preparation (not yet submitted). New York University. https://github.com/Harsh23Kashyap/customnerd}
 }
 ```
 
-**APA (example):** Kashyap, H., Wu, S., Jiang, F., Kim, E., Herman, E., Dickman, J., Agarwal, D., & Shasha, D. (2026). *CustomNerd: A framework and tool for fast deployment of production-ready expertise-based question answering systems* [Manuscript in preparation]. New York University.
+**APA:** Kashyap, H., Wu, S., Jiang, F., Kim, E., Herman, E., Dickman, J., Agarwal, D., & Shasha, D. (2026). *CustomNerd: A framework and tool for fast deployment of production-ready expertise-based question answering systems* [Manuscript in preparation]. New York University. https://github.com/Harsh23Kashyap/customnerd
 
 ---
 
@@ -88,7 +71,6 @@ Custom-Nerd/Nerd-Engine is a modular, configuration-driven research assistant en
 ## Table of Contents
 - [Research publication](#customnerd-a-framework-and-tool-for-fast-deployment-of-production-ready-expertise-based-question-answering-systems)
 - [Research team](#research-team)
-- [Abstract](#abstract)
 - [How to cite](#how-to-cite-this-work)
 - [Overview](#overview)
 - [Features](#features)
