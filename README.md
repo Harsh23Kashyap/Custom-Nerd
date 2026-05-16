@@ -4,34 +4,36 @@
 
 **Paper status:** In progress (not yet submitted)
 
-### Authors
-
-**Harsh Kashyap**<sup>1</sup> · **Shela Wu**<sup>2</sup> · **Fengcheng Jiang**<sup>2</sup> · **Euijae Kim**<sup>2</sup> · **Elyse Herman**<sup>3</sup> · **Jacob Dickman**<sup>4</sup> · **Daksh Agarwal**<sup>5</sup> · **Dennis Shasha**<sup>2</sup>
-
-<sup>1</sup> Apple · <sup>2</sup> New York University · <sup>3</sup> McGill University · <sup>4</sup> Rutgers University · <sup>5</sup> Guru Gobind Singh Indraprastha University
-
-*Harsh Kashyap* served as lead author on the manuscript and primary implementer of this repository. All authors listed above contributed to the research, system design, evaluation, and/or writing of this work.
-
 ### Research team
 
-| Author | Affiliation | Contact |
-|--------|-------------|---------|
-| **Harsh Kashyap** | Apple | harsh_kashyap@apple.com |
-| **Shela Wu** | New York University | shela.wu@nyu.edu |
-| **Fengcheng Jiang** | New York University | fj2080@nyu.edu |
-| **Euijae Kim** | New York University | ek3955@nyu.edu |
-| **Elyse Herman** | McGill University | Elyse.herman@desjardins.com |
-| **Jacob Dickman** | Rutgers University | — |
-| **Daksh Agarwal** | Guru Gobind Singh Indraprastha University | daksh.10819051623@ipu.ac.in |
-| **Dennis Shasha** | New York University (faculty advisor) | shasha@cs.nyu.edu |
+This repository is maintained collaboratively by the research team below. All members contributed to the research, system design, evaluation, and/or writing of this work.
+
+| # | Author | Affiliation | Contact |
+|---|--------|-------------|---------|
+| 1 | Harsh Kashyap | Thapar Institute of Engineering and Technology (lead author) | harsh.kashyap2001@gmail.com |
+| 2 | Shela Wu | New York University | shela.wu@nyu.edu |
+| 3 | Fengcheng Jiang | New York University | fj2080@nyu.edu |
+| 4 | Euijae Kim | New York University | ek3955@nyu.edu |
+| 5 | Elyse Herman | McGill University | Elyse.herman@desjardins.com |
+| 6 | Jacob Dickman | Rutgers University | — |
+| 7 | Daksh Agarwal | Guru Gobind Singh Indraprastha University | daksh.10819051623@ipu.ac.in |
+| 8 | Dennis Shasha | New York University (faculty advisor) | shasha@cs.nyu.edu |
 
 ### Abstract
 
-CustomNerd is a modular framework to build domain-specific expertise systems using a common set of core components. The system is designed to support multiple domains and has already been deployed to instantiate expertise-driven systems in nutrition, wireless technology, and finance. CustomNerd incorporates specialized knowledge from domain-specific data sources that a user provides and processes the results of searches on those sources. The system consists of five main components: (i) **Query Conversion**, which converts user input into structured queries for one or more application-specific databases of validated articles; (ii) **Extraction**, which uses the structured queries to extract relevant data from those external databases; (iii) **Filtering and Classification**, which identifies and prioritizes relevant documents among those retrieved; (iv) **Reliability Assessment**, which evaluates the quality of the documents (e.g., statistical validity, absence of conflict of interest); and (v) **Response Generation**, which produces text outputs based on data sources considered to be relevant and reliable.
-
-In addition, the system can (i) generate questionnaires based on a user query, (ii) allow users to upload their own documents, and (iii) work with a variety of Large Language Model (LLM) engines. This work describes how the system can be used to build an expertise-driven application through a running example, explains the system’s architecture, discusses related work, and compares the functionality and quality of a deployment of an application having to do with Cloud Computing with both LangChain and agentic approaches.
-
-**Keywords:** modular AI; expertise-based question answering; retrieval-augmented generation; domain-specific AI systems; reliability assessment; LLM integration
+> **CustomNerd** is a modular framework for building domain-specific expertise systems from a shared set of core components. It supports multiple domains and has been used to deploy expertise-driven systems in nutrition, wireless technology, and finance. The framework ingests domain-specific data sources supplied by the user and processes search results from those sources.
+>
+> The system comprises five main components:
+>
+> 1. **Query Conversion** — converts user input into structured queries for application-specific databases of validated articles  
+> 2. **Extraction** — retrieves relevant data from external databases using those queries  
+> 3. **Filtering and Classification** — identifies and ranks relevant documents among retrieved results  
+> 4. **Reliability Assessment** — evaluates document quality (e.g., statistical validity, conflict-of-interest checks)  
+> 5. **Response Generation** — produces answers from sources deemed relevant and reliable  
+>
+> Additional capabilities include questionnaire generation from a user query, user document upload, and support for multiple large language model (LLM) engines. The manuscript describes building an expertise-driven application through a running example, documents the architecture, reviews related work, and compares a cloud-computing deployment against LangChain and agentic baselines.
+>
+> **Keywords:** modular AI; expertise-based question answering; retrieval-augmented generation; domain-specific AI systems; reliability assessment; LLM integration
 
 ### How to cite this work
 
@@ -85,6 +87,8 @@ Custom-Nerd/Nerd-Engine is a modular, configuration-driven research assistant en
 
 ## Table of Contents
 - [Research publication](#customnerd-a-framework-and-tool-for-fast-deployment-of-production-ready-expertise-based-question-answering-systems)
+- [Research team](#research-team)
+- [Abstract](#abstract)
 - [How to cite](#how-to-cite-this-work)
 - [Overview](#overview)
 - [Features](#features)
