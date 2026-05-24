@@ -20,6 +20,15 @@ customnerd-backend/variables.env
 customnerd-backend/saved_states/*/variables.env
 customnerd-backend/ATT*.env
 
+# Overleaf
+Overleaf/
+Extras/
+README.md
+INSTALLATION_GUIDE.md
+
 # User data and backups
 customnerd-backend/historical_answer.json
 customnerd-backend/saved_states/*/historical_answer.json
+.env
+customnerd-backend/saved_states/CloudNerd/variables.env
+*.env
