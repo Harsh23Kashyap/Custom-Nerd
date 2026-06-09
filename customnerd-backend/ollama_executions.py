@@ -223,11 +223,14 @@ def generate_final_response_ollama(all_relevant_articles, query, FINAL_RESPONSE_
 
 def generate_code_from_content_ollama(article_content, type,
                                       system_prompt_function_generator_list_search,
-                                      system_prompt_function_generator_id_search):
+                                      system_prompt_function_generator_id_search,
+                                      system_prompt_function_generator_clean_query=None):
     """Ollama implementation for generating code from content."""
     try:
         if type == "id_search":
             system_prompt = system_prompt_function_generator_id_search
+        elif type == "clean_query" and system_prompt_function_generator_clean_query:
+            system_prompt = system_prompt_function_generator_clean_query
         else:
             system_prompt = system_prompt_function_generator_list_search
 

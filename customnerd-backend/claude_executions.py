@@ -13,7 +13,6 @@ from anthropic import (
     APIStatusError,
 )
 
-# Initialize Anthropic client with API key from environment
 api_key = os.getenv('ANTHROPIC_API_KEY')
 if not api_key:
     print("Warning: ANTHROPIC_API_KEY not found in environment variables")
@@ -29,10 +28,6 @@ DEFAULT_MAX_TOKENS = 8192
 
 
 def reinitialize_claude_client():
-    """
-    Reinitialize the Anthropic client with the current environment variables.
-    This is useful when the API key is updated through the web interface.
-    """
     global client
     api_key = os.getenv('ANTHROPIC_API_KEY')
     if not api_key:
@@ -222,6 +217,7 @@ def generate_code_from_content_claude(
     type,
     system_prompt_function_generator_list_search,
     system_prompt_function_generator_id_search,
+    system_prompt_function_generator_clean_query=None,
 ):
     """
     Claude implementation for generating code from content.
@@ -235,6 +231,8 @@ def generate_code_from_content_claude(
             system_prompt = system_prompt_function_generator_list_search
         elif type == "id_search":
             system_prompt = system_prompt_function_generator_id_search
+        elif type == "clean_query" and system_prompt_function_generator_clean_query:
+            system_prompt = system_prompt_function_generator_clean_query
         else:
             system_prompt = system_prompt_function_generator_list_search
         return _retryable_claude_call(

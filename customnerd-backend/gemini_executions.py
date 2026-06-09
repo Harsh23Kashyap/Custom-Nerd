@@ -4,7 +4,6 @@ import logging
 from typing import Any, Dict, Optional
 from google import genai
 
-# Initialize Gemini client with API key from environment
 api_key = os.getenv('GEMINI_API_KEY')
 if not api_key:
     print("Warning: GEMINI_API_KEY not found in environment variables")
@@ -16,10 +15,6 @@ MAX_RETRIES = 3            # network / rate-limit retries
 BACKOFF_SECS = 2           # exponential back-off base
 
 def reinitialize_gemini_client():
-    """
-    Reinitialize the Gemini client with the current environment variables.
-    This is useful when the API key is updated through the web interface.
-    """
     global client
     api_key = os.getenv('GEMINI_API_KEY')
     if not api_key:
@@ -180,7 +175,7 @@ def generate_final_response_gemini(all_relevant_articles, query, FINAL_RESPONSE_
     
     return final_output
 
-def generate_code_from_content_gemini(article_content, type, system_prompt_function_generator_list_search, system_prompt_function_generator_id_search):
+def generate_code_from_content_gemini(article_content, type, system_prompt_function_generator_list_search, system_prompt_function_generator_id_search, system_prompt_function_generator_clean_query=None):
     """
     Gemini implementation for generating code from content.
     """
@@ -188,13 +183,13 @@ def generate_code_from_content_gemini(article_content, type, system_prompt_funct
         raise ValueError("Gemini client not initialized. Please check your GEMINI_API_KEY in the environment variables.")
     
     try:
-        # Select the appropriate system prompt based on type
         if type == "list_search":
             system_prompt = system_prompt_function_generator_list_search
         elif type == "id_search":
             system_prompt = system_prompt_function_generator_id_search
+        elif type == "clean_query" and system_prompt_function_generator_clean_query:
+            system_prompt = system_prompt_function_generator_clean_query
         else:
-            # Default to list_search for unknown types
             system_prompt = system_prompt_function_generator_list_search
         
         prompt = f"{system_prompt}\n\nCode/: {article_content}"
@@ -293,7 +288,7 @@ Generate the JSON output exactly as specified.
 
         full_input = f"{system_instruction}\n\n{user_content}"
 
-        # 🔥 Gemini API call (Google Generative Language client)
+        # Gemini API call
         response = client.models.generate_content(
             model="gemini-2.5-flash",
             contents=full_input,

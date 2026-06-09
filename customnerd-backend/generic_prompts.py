@@ -1,4 +1,12 @@
 
+from pathlib import Path
+
+_CLEAN_QUERY_PATH = Path(__file__).resolve().parent / "clean_query.py"
+try:
+    CLEAN_QUERY_PY_DEFAULT = _CLEAN_QUERY_PATH.read_text(encoding="utf-8")
+except OSError:
+    CLEAN_QUERY_PY_DEFAULT = ""
+
 # Define the System Prompt for the AI model
 system_prompt_function_generator_list_search = """
 You are an expert Python developer specializing in API integration and function creation. Your task is to generate a Python function based on provided API documentation or code examples.
@@ -189,50 +197,62 @@ def fetch_arxiv_data(query, max_results=10, article_counter=10):
                 return []
     return []
 """
-system_prompt_function_generator_list_search = """
-You are an expert Python developer specializing in API integration and function creation. Your task is to generate a Python function based on provided input, which could be raw strings, lists, pseudo-code, or messy input. The function should automatically clean, normalize, and return a plain list of strings.
 
-Objective:
-Create a Python function named `refine_prompts` that takes a single argument `query_list` and returns a cleaned, flattened list of strings.
+system_prompt_function_generator_clean_query = """
+You are an expert Python developer. Generate or adapt `clean_query.py` for CustomNerd.
 
-Requirements:
+Pipeline context:
+1. query_generation produces a list (usually one JSON string with expanded_queries).
+2. clean_query(query_list) turns that into a flat list[str] of search strings.
+3. collect_articles(query_list) in user_search_apis.py runs those strings against the data source.
 
-1. Function Signature:
-   def refine_prompts(query_list,):
+Files in this project (user-editable in the Configuration UI):
+- clean_query.py — YOU are generating this file. One public function only: clean_query.
+- user_search_apis.py — collect_articles(query_list, article_counter=10)
+- user_list_search.py — fetch_articles_by_ids(id_list)
+- helper_functions.py — shared utilities (import with `from helper_functions import *` if needed)
 
-2. Required Imports:
-   import os
-   from helper_functions import *
+Functions commonly available from helper_functions (via star import):
+- exponential_backoff(fn, *args, **kwargs) — retry wrapper for API calls
+- get_llm_client() — returns configured LLM provider name
+- organize_database_articles, process_articles, generate_summary — pipeline helpers
+You do not need these for basic query parsing unless the user's instructions ask for it.
 
-3. Documentation:
-   Include a comprehensive docstring explaining:
-   - Function purpose
-   - Parameters (`query_list`)
-   - Returns (cleaned list of strings)
+Core task:
+Create ONE public function named `clean_query` in `clean_query.py`. Do not define cap_queries, refine_prompts, or any other public entry points.
 
-4. Implementation Guidelines:
-   - Iterate through `query_list`.
-   - Automatically handle messy inputs:
-     * If the user provides a prompt with "before" and "after", intelligently detect and split the input based on these cues, extracting the relevant segments as separate items.
-     * If the user provides pseudo-code, automatically interpret and extract meaningful string representations or steps from it.
-     * If the user provides code with errors, attempt to parse and extract valid lines or correct obvious mistakes to produce clean strings.
-     * Strings containing newline characters (`\n`), split them into separate items.
-     * Nested lists, flatten them into a single list of strings.
-     * Remove extra whitespace from each item.
-     * Any non-string item should be converted to string.
-   - Remove duplicates while preserving order.
-   - Do NOT wrap results in dictionaries or call any processing function.
-   - Return only a plain list of cleaned strings.
+Function signature:
+    def clean_query(query_list, max_queries=None):
 
-5. Output Format:
-   - Raw Python code only.
-   - Include imports at the top.
-   - Start immediately with code.
-   - Do NOT include markdown, comments outside the code, or extra text.
+Parameters:
+- query_list: output from query_generation — usually a one-element list whose first item is JSON like
+  {"expanded_queries": ["query one", "query two", ...]} (sometimes wrapped in markdown code fences).
+  May also be a nested list of plain strings.
+- max_queries: optional int; when set, return at most that many queries (preserve order).
+  The cascade retrieval layer passes this internally; users normally call clean_query(query_list) only.
 
-6. Key Notes:
-   - The function should automatically clean any input in `query_list`.
-   - No external processing or additional data should be returned—just the cleaned list.
+Returns:
+- list[str]: flat, deduplicated search strings passed to collect_articles.
+
+Implementation rules:
+- Parse expanded_queries JSON when present (json.loads, optional json5, regex fallback for malformed JSON).
+- Strip markdown code fences around JSON if present.
+- If JSON parsing fails, flatten nested lists, split on newlines, strip whitespace, dedupe preserving order.
+- Apply max_queries only at the end when max_queries is not None and max_queries > 0.
+- Private helpers use a leading underscore (_parse_..., _flatten_..., etc.).
+- Allowed imports: json, re, json5. Add `from helper_functions import *` only when the user's instructions require it.
+- Do NOT import or call cap_queries or refine_prompts — those no longer exist.
+
+The user message may contain their current clean_query.py and/or plain-language requirements. Adapt the reference implementation below unless they clearly want something different.
+
+Reference implementation (default clean_query.py — use as starting point):
+
+""" + CLEAN_QUERY_PY_DEFAULT + """
+
+Output format:
+- Raw Python source only (full clean_query.py contents).
+- No markdown fences or prose outside the code.
+- Start with imports, then clean_query, then private helpers.
 """
 
 system_prompt_function_generator_id_search = """

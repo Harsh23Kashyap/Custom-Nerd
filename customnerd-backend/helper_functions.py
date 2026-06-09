@@ -84,15 +84,9 @@ from ollama_executions import (
 )
 
 def get_llm_client():
-    """
-    Get the appropriate LLM client based on the LLM environment variable.
-    Dynamically reads the LLM preference from environment variables.
-    """
-    # Reload environment variables to get the latest LLM setting
     from dotenv import load_dotenv
     load_dotenv('variables.env', override=True)
     
-    # Get the current LLM preference from environment
     llm_preference = os.getenv('LLM', 'OpenAI').strip('"').strip()
     
     if llm_preference.lower() == 'gemini':
@@ -136,7 +130,11 @@ def determine_question_validity(query):
 """
 
 
-def query_generation(query):
+def query_generation(
+    query,
+    general_query_prompt_override=None,
+    query_contention_enabled_override=None,
+):
     """
     Generates a total of 5 PubMed queries that are aggregated together into a list:
     - 1 query built directly from the user's question that is meant to retrieve articles that provide general context
@@ -144,6 +142,8 @@ def query_generation(query):
 
     Parameters:
     - query (str): The user's question.
+    - general_query_prompt_override (str, optional): Override system prompt for general query (cascade P4).
+    - query_contention_enabled_override (bool, optional): Force contention on/off (cascade uses False).
 
     Returns:
     - general_query (str): The broad query that will retrieve articles related to a specific topic.
@@ -151,20 +151,26 @@ def query_generation(query):
     - query_list (list): A list of all 5 queries generated.
     """
     llm_client = get_llm_client()
-    
-    # Check if query contention is enabled
-    from openai_prompts import QUERY_CONTENTION_ENABLED
-    
-    if llm_client == 'openai':
-        general_query, query_contention = query_generation_openai(query, GENERAL_QUERY_PROMPT, QUERY_CONTENTION_PROMPT, QUERY_CONTENTION_ENABLED)
-    elif llm_client == 'claude':
-        general_query, query_contention = query_generation_claude(query, GENERAL_QUERY_PROMPT, QUERY_CONTENTION_PROMPT, QUERY_CONTENTION_ENABLED)
-    elif llm_client == 'ollama':
-        general_query, query_contention = query_generation_ollama(query, GENERAL_QUERY_PROMPT, QUERY_CONTENTION_PROMPT, QUERY_CONTENTION_ENABLED)
-    else:
-        general_query, query_contention = query_generation_gemini(query, GENERAL_QUERY_PROMPT, QUERY_CONTENTION_PROMPT, QUERY_CONTENTION_ENABLED)
 
-    if QUERY_CONTENTION_ENABLED:
+    from openai_prompts import QUERY_CONTENTION_ENABLED
+
+    g_prompt = general_query_prompt_override or GENERAL_QUERY_PROMPT
+    contention_enabled = (
+        QUERY_CONTENTION_ENABLED
+        if query_contention_enabled_override is None
+        else query_contention_enabled_override
+    )
+
+    if llm_client == 'openai':
+        general_query, query_contention = query_generation_openai(query, g_prompt, QUERY_CONTENTION_PROMPT, contention_enabled)
+    elif llm_client == 'claude':
+        general_query, query_contention = query_generation_claude(query, g_prompt, QUERY_CONTENTION_PROMPT, contention_enabled)
+    elif llm_client == 'ollama':
+        general_query, query_contention = query_generation_ollama(query, g_prompt, QUERY_CONTENTION_PROMPT, contention_enabled)
+    else:
+        general_query, query_contention = query_generation_gemini(query, g_prompt, QUERY_CONTENTION_PROMPT, contention_enabled)
+
+    if contention_enabled:
         #### AGGREGATE ALL 5 QUERIES
         pattern = r"Query: (.*)"
         matches = re.findall(pattern, query_contention)
@@ -317,7 +323,6 @@ def _ensure_fields(d: Dict[str, Any],
 
 
 def _flatten_authors(raw: Any) -> str:
-    """Robustly flatten author data into a comma-separated string."""
     if not raw:
         return ""
     if isinstance(raw, str):
@@ -1384,26 +1389,42 @@ def trim_relevant_articles_by_token_limit(all_relevant_articles, user_query, max
 
 """## Step5. Final Output"""
 
-def generate_final_response(all_relevant_articles, query):
+def generate_final_response(all_relevant_articles, query, retrieval_confidence=None):
     """
     Generate the final response to the user's question based on the strongest level of evidence in the provided article summaries.
 
     Parameters:
     - all_relevant_articles (list): List of all relevant article summaries.
     - query (str): User's question.
+    - retrieval_confidence (str, optional): high | medium | low from tiered retrieval.
 
     Returns:
     - final_output (str): Final response to the user question.
     """
     llm_client = get_llm_client()
-    
+    prompt = FINAL_RESPONSE_PROMPT
+    if retrieval_confidence == "low":
+        prompt = (
+            prompt
+            + "\n\nRetrieval confidence is LOW: keep the answer shorter, cite only the "
+            "strongest available evidence, and end with one sentence noting that "
+            "supporting literature may be limited."
+        )
+    elif retrieval_confidence == "medium":
+        prompt = (
+            prompt
+            + "\n\nRetrieval confidence is MEDIUM: some articles came from broader "
+            "search planes — prioritize the strongest human-focused evidence and be "
+            "concise where support is thin."
+        )
+
     if llm_client == 'openai':
-        return generate_final_response_openai(all_relevant_articles, query, FINAL_RESPONSE_PROMPT, DISCLAIMER_TEXT)
+        return generate_final_response_openai(all_relevant_articles, query, prompt, DISCLAIMER_TEXT)
     if llm_client == 'claude':
-        return generate_final_response_claude(all_relevant_articles, query, FINAL_RESPONSE_PROMPT, DISCLAIMER_TEXT)
+        return generate_final_response_claude(all_relevant_articles, query, prompt, DISCLAIMER_TEXT)
     if llm_client == 'ollama':
-        return generate_final_response_ollama(all_relevant_articles, query, FINAL_RESPONSE_PROMPT, DISCLAIMER_TEXT)
-    return generate_final_response_gemini(all_relevant_articles, query, FINAL_RESPONSE_PROMPT, DISCLAIMER_TEXT)
+        return generate_final_response_ollama(all_relevant_articles, query, prompt, DISCLAIMER_TEXT)
+    return generate_final_response_gemini(all_relevant_articles, query, prompt, DISCLAIMER_TEXT)
 
 
 """### Write Final Output to Database"""
@@ -1573,7 +1594,7 @@ def print_referenced_articles(final_output, json_data):
                 if item["doi_norm"] and item["doi_norm"] == ref_doi:
                     found = item["article"]
                     best = 100.0
-                    print("✅ DOI MATCH FOUND!")
+                    print("DOI MATCH FOUND!")
                     break
 
         # Title-based matching
@@ -1585,7 +1606,7 @@ def print_referenced_articles(final_output, json_data):
                 if norm_ref_title.lower() == t.lower():
                     found = item["article"]
                     best = 100.0
-                    print("✅ EXACT TITLE MATCH")
+                    print("EXACT TITLE MATCH")
                     break
                 if (norm_ref_title.lower() in t.lower() or t.lower() in norm_ref_title.lower()):
                     score = min(len(norm_ref_title), len(t)) / max(len(norm_ref_title), len(t)) * 90.0
@@ -1666,15 +1687,36 @@ def generate_code_from_content(article_content: str, type: str):
     - str: The generated summary of the article
     """
     llm_client = get_llm_client()
+    clean_prompt = system_prompt_function_generator_clean_query
     
     try:
         if llm_client == 'openai':
-            return generate_code_from_content_openai(article_content, type, system_prompt_function_generator_list_search, system_prompt_function_generator_id_search)
+            return generate_code_from_content_openai(
+                article_content, type,
+                system_prompt_function_generator_list_search,
+                system_prompt_function_generator_id_search,
+                clean_prompt,
+            )
         if llm_client == 'claude':
-            return generate_code_from_content_claude(article_content, type, system_prompt_function_generator_list_search, system_prompt_function_generator_id_search)
+            return generate_code_from_content_claude(
+                article_content, type,
+                system_prompt_function_generator_list_search,
+                system_prompt_function_generator_id_search,
+                clean_prompt,
+            )
         if llm_client == 'ollama':
-            return generate_code_from_content_ollama(article_content, type, system_prompt_function_generator_list_search, system_prompt_function_generator_id_search)
-        return generate_code_from_content_gemini(article_content, type, system_prompt_function_generator_list_search, system_prompt_function_generator_id_search)
+            return generate_code_from_content_ollama(
+                article_content, type,
+                system_prompt_function_generator_list_search,
+                system_prompt_function_generator_id_search,
+                clean_prompt,
+            )
+        return generate_code_from_content_gemini(
+            article_content, type,
+            system_prompt_function_generator_list_search,
+            system_prompt_function_generator_id_search,
+            clean_prompt,
+        )
     except Exception as e:
         print(f"Error generating summary: {e}")
         return None
@@ -1912,8 +1954,805 @@ def run_with_rate_limit_curl_fallback(fn, *args, **kwargs):
 
 
 def collect_articles_with_curl_fallback(collect_fn, query_list, *args, **kwargs):
-    """Same as run_with_rate_limit_curl_fallback but reads clearly at call sites."""
     return run_with_rate_limit_curl_fallback(collect_fn, query_list, *args, **kwargs)
+
+
+_RETRIEVAL_STOPWORDS = frozenset(
+    "a an the is are was were be been being have has had do does did will would "
+    "can could should may might must shall to of in for on with at by from as into "
+    "through during before after above below between out off over under again "
+    "how what when where why which who whom this that these those i me my we our "
+    "you your they their it its".split()
+)
+
+_CASCADE_BROAD_QUERY_PROMPT = (
+    "You are an expert at generating broad, alternative search queries for "
+    "scientific literature retrieval. Given a user question, produce one concise "
+    "PubMed-style query using synonyms, related terms, and OR expansions. "
+    "Return only the query string and no other text."
+)
+
+RETRIEVAL_DEFAULTS: Dict[str, Any] = {
+    "mode": "legacy",
+    "planes": ["P1", "P2", "P3", "P4", "P5"],
+    "short_circuit": False,
+    "min_articles": 2,
+    "min_term_coverage": 0.4,
+    "min_top_score": 0.15,
+    "max_queries_p1": 8,
+    "max_queries_p4": 12,
+    "rerank_top_k": 30,
+    "p1_quota": 0.6,
+    "facet_suffix": "",
+    "lexicon": "",
+}
+
+RETRIEVAL_NERD_PROFILES: Dict[str, Dict[str, Any]] = {
+    "DietNerd": {
+        "mode": "cascade",
+        "facet_suffix": "[Humans]",
+    },
+    "CloudNerd": {
+        "mode": "cascade",
+        "lexicon": (
+            "aws,amazon,azure,gcp,google cloud,heroku,terraform,kubernetes,docker,"
+            "lambda,ec2,s3,blob,devops,cloud run,firebase,stack,helm,nginx"
+        ),
+    },
+    "NewsNerd": {"mode": "legacy"},
+    "SpaceNerd": {"mode": "legacy"},
+    "SciNERd": {"mode": "legacy"},
+}
+
+_active_nerd_name: Optional[str] = None
+_retrieval_profile_override: Dict[str, Any] = {}
+_active_nerd_state_path: Optional[str] = None
+
+
+def configure_retrieval_state_path(path: Optional[str]) -> None:
+    global _active_nerd_state_path
+    _active_nerd_state_path = path
+
+
+def _persist_active_nerd_state(state_name: Optional[str]) -> None:
+    if not _active_nerd_state_path:
+        return
+    try:
+        from pathlib import Path
+
+        path = Path(_active_nerd_state_path)
+        if state_name:
+            path.write_text(state_name.strip(), encoding="utf-8")
+        elif path.is_file():
+            path.unlink(missing_ok=True)
+    except Exception as exc:
+        print(f"[retrieval] could not persist active nerd state: {exc}")
+
+
+def restore_active_nerd_profile_from_disk() -> None:
+    """Restore last loaded saved state after restart."""
+    if not _active_nerd_state_path:
+        return
+    try:
+        from pathlib import Path
+
+        path = Path(_active_nerd_state_path)
+        if not path.is_file():
+            return
+        state_name = path.read_text(encoding="utf-8").strip()
+        if state_name:
+            set_active_nerd_profile(state_name)
+    except Exception as exc:
+        print(f"[retrieval] could not restore active nerd state: {exc}")
+
+
+def _safe_profile_bool(value: Any, default: bool) -> bool:
+    if isinstance(value, bool):
+        return value
+    if value is None:
+        return default
+    if isinstance(value, (int, float)):
+        return bool(value)
+    text = str(value).strip().strip('"').lower()
+    if text in ("1", "true", "yes", "on"):
+        return True
+    if text in ("0", "false", "no", "off", ""):
+        return False
+    return default
+
+
+def _safe_profile_int(value: Any, default: int) -> int:
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return default
+
+
+def _safe_profile_float(value: Any, default: float) -> float:
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return default
+
+
+def _legacy_env_retrieval_overrides() -> Dict[str, Any]:
+    """Honor RETRIEVAL_* env vars when no known Nerd profile is active."""
+    overrides: Dict[str, Any] = {}
+
+    def _env(name: str) -> str:
+        return (os.getenv(name) or "").strip().strip('"')
+
+    mode = _env("RETRIEVAL_MODE").lower()
+    if mode in ("cascade", "legacy"):
+        overrides["mode"] = mode
+
+    planes_raw = _env("RETRIEVAL_PLANES")
+    if planes_raw:
+        planes = [p.strip().upper() for p in planes_raw.split(",") if p.strip()]
+        if planes:
+            overrides["planes"] = planes
+
+    if _env("RETRIEVAL_SHORT_CIRCUIT"):
+        overrides["short_circuit"] = _safe_profile_bool(_env("RETRIEVAL_SHORT_CIRCUIT"), False)
+
+    for env_key, profile_key, caster, default in (
+        ("RETRIEVAL_MIN_ARTICLES", "min_articles", _safe_profile_int, 2),
+        ("RETRIEVAL_MAX_QUERIES_P1", "max_queries_p1", _safe_profile_int, 8),
+        ("RETRIEVAL_MAX_QUERIES_P4", "max_queries_p4", _safe_profile_int, 12),
+        ("RETRIEVAL_RERANK_TOP_K", "rerank_top_k", _safe_profile_int, 30),
+        ("RETRIEVAL_MIN_TERM_COVERAGE", "min_term_coverage", _safe_profile_float, 0.4),
+        ("RETRIEVAL_MIN_TOP_SCORE", "min_top_score", _safe_profile_float, 0.15),
+        ("RETRIEVAL_P1_QUOTA", "p1_quota", _safe_profile_float, 0.6),
+    ):
+        raw = _env(env_key)
+        if raw:
+            overrides[profile_key] = caster(raw, default)
+
+    facet = _env("RETRIEVAL_FACET_SUFFIX")
+    if facet:
+        overrides["facet_suffix"] = facet
+
+    lexicon = _env("RETRIEVAL_LEXICON")
+    if lexicon:
+        overrides["lexicon"] = lexicon
+
+    return overrides
+
+
+def _normalize_retrieval_profile(profile: Dict[str, Any]) -> Dict[str, Any]:
+    """Coerce profile fields so bad/missing values never crash retrieval."""
+    out = dict(RETRIEVAL_DEFAULTS)
+    out.update(profile)
+
+    mode = str(out.get("mode", "legacy")).strip().lower()
+    out["mode"] = mode if mode in ("legacy", "cascade") else "legacy"
+
+    planes = out.get("planes") or RETRIEVAL_DEFAULTS["planes"]
+    if isinstance(planes, str):
+        planes = [p.strip().upper() for p in planes.split(",") if p.strip()]
+    elif isinstance(planes, (list, tuple, set)):
+        planes = [str(p).strip().upper() for p in planes if str(p).strip()]
+    else:
+        planes = list(RETRIEVAL_DEFAULTS["planes"])
+    out["planes"] = planes or list(RETRIEVAL_DEFAULTS["planes"])
+
+    out["short_circuit"] = _safe_profile_bool(out.get("short_circuit"), False)
+    out["min_articles"] = max(0, _safe_profile_int(out.get("min_articles"), 2))
+    out["max_queries_p1"] = max(1, _safe_profile_int(out.get("max_queries_p1"), 8))
+    out["max_queries_p4"] = max(1, _safe_profile_int(out.get("max_queries_p4"), 12))
+    out["rerank_top_k"] = max(1, _safe_profile_int(out.get("rerank_top_k"), 30))
+    out["min_term_coverage"] = _safe_profile_float(out.get("min_term_coverage"), 0.4)
+    out["min_top_score"] = _safe_profile_float(out.get("min_top_score"), 0.15)
+    out["p1_quota"] = min(1.0, max(0.0, _safe_profile_float(out.get("p1_quota"), 0.6)))
+    out["facet_suffix"] = str(out.get("facet_suffix") or "")
+    out["lexicon"] = str(out.get("lexicon") or "")
+    return out
+
+
+def set_retrieval_profile_override(overrides: Optional[Dict[str, Any]] = None) -> None:
+    global _retrieval_profile_override
+    _retrieval_profile_override = dict(overrides or {})
+
+
+def clear_retrieval_profile_override() -> None:
+    set_retrieval_profile_override(None)
+
+
+def _normalize_nerd_profile_key(state_name: str) -> Optional[str]:
+    if not state_name:
+        return None
+    name = state_name.strip()
+    if name in RETRIEVAL_NERD_PROFILES:
+        return name
+    lower = name.lower()
+    for key in RETRIEVAL_NERD_PROFILES:
+        if lower.startswith(key.lower()):
+            return key
+    return None
+
+
+def set_active_nerd_profile(state_name: Optional[str]) -> None:
+    global _active_nerd_name
+    try:
+        _active_nerd_name = state_name.strip() if state_name else None
+        key = _normalize_nerd_profile_key(_active_nerd_name or "")
+        mode = get_retrieval_profile().get("mode", "legacy")
+        print(f"[retrieval] active nerd={_active_nerd_name!r} profile={key!r} mode={mode}")
+        _persist_active_nerd_state(_active_nerd_name)
+    except Exception as exc:
+        print(f"[retrieval] set_active_nerd_profile failed ({exc!r}); using legacy defaults")
+
+
+def get_retrieval_profile() -> Dict[str, Any]:
+    profile = dict(RETRIEVAL_DEFAULTS)
+    key = _normalize_nerd_profile_key(_active_nerd_name or "")
+    if key:
+        profile.update(RETRIEVAL_NERD_PROFILES[key])
+    else:
+        profile.update(_legacy_env_retrieval_overrides())
+    if _retrieval_profile_override:
+        profile.update(_retrieval_profile_override)
+    return _normalize_retrieval_profile(profile)
+
+
+def _frontend_user_env_path() -> str:
+    backend_dir = os.path.dirname(os.path.abspath(__file__))
+    return os.path.normpath(os.path.join(backend_dir, "..", "customnerd-website", "user_env.js"))
+
+
+def load_frontend_user_flow() -> Dict[str, Any]:
+    try:
+        with open(_frontend_user_env_path(), "r", encoding="utf-8") as f:
+            content = f.read()
+        start_idx = content.find("{")
+        end_idx = content.rfind("}") + 1
+        if start_idx == -1 or end_idx <= 0:
+            return {}
+        import json5
+
+        config = json5.loads(content[start_idx:end_idx])
+        user_flow = config.get("USER_FLOW", {})
+        return user_flow if isinstance(user_flow, dict) else {}
+    except Exception:
+        return {}
+
+
+def is_user_cascade_retrieval_enabled() -> bool:
+    cascade = load_frontend_user_flow().get("cascade_retrieval")
+    if not isinstance(cascade, dict):
+        return False
+    return bool(cascade.get("visible", False))
+
+
+def is_cascade_mode() -> bool:
+    try:
+        return is_user_cascade_retrieval_enabled()
+    except Exception:
+        return False
+
+
+def _enabled_retrieval_planes() -> set[str]:
+    planes = get_retrieval_profile().get("planes") or RETRIEVAL_DEFAULTS["planes"]
+    return {str(p).strip().upper() for p in planes if str(p).strip()}
+
+
+def resolve_title(title_text: Optional[str], body_text: str) -> str:
+    if title_text and str(title_text).strip():
+        return str(title_text).strip()
+    body = (body_text or "").strip()
+    if not body:
+        return ""
+    head = body.split("?")[0].strip()
+    if head and len(head) <= 200:
+        return head + ("?" if "?" in body[: len(head) + 1] else "")
+    return body[:200].strip()
+
+
+def get_article_dedupe_key(article: Any) -> str:
+    if not isinstance(article, dict):
+        return str(id(article))
+    mc = article.get("MedlineCitation")
+    if isinstance(mc, dict) and mc.get("PMID"):
+        return f"pmid:{mc.get('PMID')}"
+    for key in ("id", "answer_id", "PMID", "url", "link"):
+        val = article.get(key)
+        if val:
+            return f"{key}:{val}"
+    title = article.get("title") or article.get("Title")
+    if title:
+        return f"title:{str(title).strip().lower()[:200]}"
+    return f"obj:{id(article)}"
+
+
+def merge_and_dedupe_articles(existing: list, extra: list) -> list:
+    seen = {get_article_dedupe_key(a) for a in existing}
+    merged = list(existing)
+    for art in extra:
+        key = get_article_dedupe_key(art)
+        if key in seen:
+            continue
+        seen.add(key)
+        merged.append(art)
+    return merged
+
+
+def extract_key_terms(query: str, title: Optional[str] = None) -> list:
+    text = f"{title or ''} {query}"
+    terms: list = []
+    seen: set = set()
+
+    def add(tok: str) -> None:
+        t = tok.strip().lower()
+        if len(t) < 3 or t in seen or t in _RETRIEVAL_STOPWORDS:
+            return
+        seen.add(t)
+        terms.append(t)
+
+    for m in re.finditer(r"[a-zA-Z][a-zA-Z0-9_./:-]{2,}", text):
+        add(m.group(0))
+
+    lexicon = get_retrieval_profile().get("lexicon") or ""
+    if lexicon:
+        lower = text.lower()
+        for term in lexicon.split(","):
+            term = term.strip().lower()
+            if term and term in lower:
+                add(term)
+
+    return terms[:24]
+
+
+def _article_corpus_text(articles: list) -> str:
+    parts: list = []
+    for art in articles or []:
+        if not isinstance(art, dict):
+            parts.append(str(art))
+            continue
+        mc = art.get("MedlineCitation")
+        if isinstance(mc, dict):
+            article_node = mc.get("Article") or {}
+            parts.append(str(article_node.get("ArticleTitle") or ""))
+            abstract = article_node.get("Abstract") or {}
+            if isinstance(abstract, dict):
+                for block in abstract.get("AbstractText") or []:
+                    parts.append(str(block))
+            else:
+                parts.append(str(abstract))
+        parts.extend(
+            [
+                str(art.get("title") or ""),
+                str(art.get("abstract") or ""),
+                str(art.get("summary") or ""),
+                str(art.get("answer_body") or ""),
+            ]
+        )
+    return " ".join(parts).lower()
+
+
+def _article_text_for_rank(article: Any) -> str:
+    if not isinstance(article, dict):
+        return str(article)[:4000]
+    mc = article.get("MedlineCitation")
+    if isinstance(mc, dict):
+        article_node = mc.get("Article") or {}
+        title = str(article_node.get("ArticleTitle") or "")
+        abstract = article_node.get("Abstract") or {}
+        abs_text = ""
+        if isinstance(abstract, dict):
+            for block in abstract.get("AbstractText") or []:
+                abs_text += " " + str(block)
+        else:
+            abs_text = str(abstract)
+        return f"{title} {abs_text}".strip()
+    return " ".join(
+        str(article.get(k) or "")
+        for k in ("title", "abstract", "summary", "answer_body", "body")
+    ).strip()
+
+
+def _top_tfidf_score(articles: list, query_text: str) -> float:
+    if not articles or not query_text:
+        return 0.0
+    texts = [_article_text_for_rank(a) for a in articles]
+    texts = [t for t in texts if t.strip()]
+    if not texts:
+        return 0.0
+    try:
+        vec = TfidfVectorizer(stop_words="english", max_features=5000)
+        mat = vec.fit_transform(texts + [query_text])
+        sims = cosine_similarity(mat[-1], mat[:-1]).flatten()
+        return float(max(sims)) if len(sims) else 0.0
+    except Exception:
+        return 0.0
+
+
+def passes_retrieval_quality_gate(
+    articles: list,
+    query_text: str,
+    *,
+    terms: Optional[list] = None,
+) -> tuple:
+    cfg = get_retrieval_profile()
+    min_articles = cfg.get("min_articles", 2)
+    min_coverage = cfg.get("min_term_coverage", 0.4)
+    min_top = cfg.get("min_top_score", 0.15)
+
+    count = len(articles or [])
+    terms = terms if terms is not None else extract_key_terms(query_text)
+    corpus = _article_corpus_text(articles)
+    coverage = 1.0
+    if terms:
+        coverage = sum(1 for t in terms if t.lower() in corpus) / len(terms)
+
+    top_score = _top_tfidf_score(articles, query_text)
+    passed = count >= min_articles and coverage >= min_coverage
+
+    if passed and coverage >= 0.6 and top_score >= min_top:
+        confidence = "high"
+    elif passed:
+        confidence = "medium"
+    else:
+        confidence = "low"
+
+    meta = {
+        "article_count": count,
+        "term_coverage": round(coverage, 3),
+        "top_tfidf_score": round(top_score, 3),
+        "passed": passed,
+    }
+    return passed, confidence, meta
+
+
+def _cascade_normalize_queries(raw_list: list, max_queries: int) -> list:
+    import clean_query
+
+    try:
+        return clean_query.clean_query(raw_list, max_queries=max_queries)
+    except Exception:
+        queries = [str(q).strip() for q in raw_list if q and str(q).strip()]
+        if max_queries > 0:
+            return queries[:max_queries]
+        return queries
+
+
+def _cascade_generate_queries(
+    text: str,
+    *,
+    general_prompt: Optional[str] = None,
+    max_queries: int = 8,
+) -> list:
+    try:
+        _, _, raw_list = query_generation(
+            text,
+            general_query_prompt_override=general_prompt,
+            query_contention_enabled_override=False,
+        )
+    except Exception as exc:
+        print(f"[tiered] query_generation failed ({exc}); using deterministic backup")
+        return deterministic_backup_queries(text, max_queries=max_queries)
+    if raw_list and isinstance(raw_list[0], str) and not raw_list[0].strip().startswith("{"):
+        import clean_query
+
+        return clean_query.clean_query(raw_list, max_queries=max_queries)
+    return _cascade_normalize_queries(raw_list, max_queries)
+
+
+def deterministic_backup_queries(text: str, max_queries: int = 8) -> list:
+    lower = (text or "").lower()
+    tokens = [
+        t for t in re.findall(r"[a-z0-9]+", lower)
+        if len(t) > 2 and t not in _RETRIEVAL_STOPWORDS
+    ]
+    lexicon_hits: list = []
+    lexicon = get_retrieval_profile().get("lexicon") or ""
+    if lexicon:
+        for term in lexicon.split(","):
+            term = term.strip().lower()
+            if term and term in lower:
+                lexicon_hits.append(term)
+
+    queries: list = []
+    seen: set = set()
+
+    def add(q: str) -> None:
+        q = " ".join(q.split()).strip()
+        if q and q not in seen and len(queries) < max_queries:
+            seen.add(q)
+            queries.append(q)
+
+    if tokens:
+        add(" ".join(tokens[:6]))
+        add(" ".join(tokens[:4]))
+        if len(tokens) >= 3:
+            add(" ".join(tokens[1:5]))
+    for term in lexicon_hits[:3]:
+        add(f"{term} {' '.join(tokens[:4])}".strip())
+    title_short = resolve_title(None, text)
+    if title_short:
+        add(title_short.rstrip("?"))
+    return queries[:max_queries]
+
+
+def _apply_facet_suffix(queries: list) -> list:
+    suffix = (get_retrieval_profile().get("facet_suffix") or "").strip()
+    if not suffix:
+        return queries
+    out: list = []
+    for q in queries:
+        q = q.strip()
+        if not q:
+            continue
+        if suffix.lower() in q.lower():
+            out.append(q)
+        else:
+            out.append(f"{q} {suffix}".strip())
+    return out
+
+
+def _tag_plane_articles(articles: list, plane_id: str, tier: str) -> list:
+    for art in articles:
+        if isinstance(art, dict):
+            art["retrieval_plane"] = plane_id
+            art["retrieval_tier"] = tier
+    return articles
+
+
+def _invoke_collect(collect_fn, queries: list) -> list:
+    if not queries:
+        return []
+    try:
+        result = collect_fn(queries)
+    except TypeError:
+        result = collect_fn(queries, max_date=None)
+    return list(result or [])
+
+
+def build_gap_fill_queries(
+    query: str,
+    title: Optional[str],
+    missing: list,
+    *,
+    max_queries: int = 6,
+) -> list:
+    resolved = resolve_title(title, query)
+    queries: list = []
+    seen: set = set()
+
+    def add(q: str) -> None:
+        q = " ".join(q.split()).strip()
+        if q and q not in seen and len(queries) < max_queries:
+            seen.add(q)
+            queries.append(q)
+
+    for term in missing[:max_queries]:
+        add(f"{term} {resolved[:80]}".strip())
+        add(term)
+    if not queries:
+        queries = deterministic_backup_queries(query, max_queries=max_queries)
+    return queries
+
+
+def rerank_tiered_articles(
+    articles: list,
+    query_text: str,
+    *,
+    top_k: Optional[int] = None,
+) -> list:
+    if not articles:
+        return []
+    cfg = get_retrieval_profile()
+    top_k = top_k or cfg.get("rerank_top_k", 30)
+    quota_ratio = cfg.get("p1_quota", 0.6)
+
+    p1 = [a for a in articles if isinstance(a, dict) and a.get("retrieval_plane") == "P1"]
+    other = [a for a in articles if a not in p1]
+    p1_slots = max(1, int(top_k * quota_ratio)) if p1 else 0
+    other_slots = top_k - p1_slots
+
+    def rank_pool(pool: list) -> list:
+        if not pool:
+            return []
+        texts = [_article_text_for_rank(a) for a in pool]
+        if not any(t.strip() for t in texts):
+            return pool
+        try:
+            vec = TfidfVectorizer(stop_words="english", max_features=5000)
+            mat = vec.fit_transform(texts + [query_text])
+            sims = cosine_similarity(mat[-1], mat[:-1]).flatten()
+            ranked = sorted(zip(pool, sims), key=lambda x: x[1], reverse=True)
+            return [a for a, _ in ranked]
+        except Exception:
+            return pool
+
+    ranked_p1 = rank_pool(p1)[:p1_slots]
+    ranked_other = rank_pool(other)[:other_slots]
+    combined = ranked_p1 + ranked_other
+    seen_keys = set()
+    deduped: list = []
+    for art in combined:
+        key = get_article_dedupe_key(art)
+        if key in seen_keys:
+            continue
+        seen_keys.add(key)
+        deduped.append(art)
+    if len(deduped) < len(articles):
+        for art in rank_pool(articles):
+            key = get_article_dedupe_key(art)
+            if key not in seen_keys:
+                seen_keys.add(key)
+                deduped.append(art)
+            if len(deduped) >= top_k:
+                break
+    return deduped[:top_k]
+
+
+def _confidence_from_best_plane(best_plane: Optional[str], gate_confidence: str) -> str:
+    if best_plane == "P1":
+        return "high" if gate_confidence in ("high", "medium") else "medium"
+    if best_plane in ("P2", "P3"):
+        return "medium"
+    if best_plane:
+        return "low"
+    return gate_confidence
+
+
+def tiered_collect_articles(
+    collect_fn,
+    input_text: str,
+    p1_query_list: list,
+    *,
+    title_text: Optional[str] = None,
+) -> tuple:
+    try:
+        return _tiered_collect_articles_impl(
+            collect_fn, input_text, p1_query_list, title_text=title_text
+        )
+    except Exception as exc:
+        import traceback
+
+        print(f"[tiered] tiered_collect_articles failed ({exc!r}); caller should use legacy collect")
+        traceback.print_exc()
+        return [], {
+            "retrieval_mode": "cascade",
+            "planes_run": [],
+            "planes_log": [f"error: {exc}"],
+            "queries_per_plane": {},
+            "retrieval_confidence": "low",
+            "quality_gate": {},
+            "error": str(exc),
+        }
+
+
+def _tiered_collect_articles_impl(
+    collect_fn,
+    input_text: str,
+    p1_query_list: list,
+    *,
+    title_text: Optional[str] = None,
+) -> tuple:
+    planes_enabled = _enabled_retrieval_planes()
+    cfg = get_retrieval_profile()
+    short_circuit = cfg.get("short_circuit", False)
+    max_p4 = cfg.get("max_queries_p4", 12)
+
+    meta: Dict[str, Any] = {
+        "retrieval_mode": "cascade",
+        "planes_run": [],
+        "planes_log": [],
+        "queries_per_plane": {},
+        "retrieval_confidence": "low",
+        "quality_gate": {},
+    }
+    all_articles: list = []
+    best_plane: Optional[str] = None
+
+    def log(msg: str) -> None:
+        print(f"[tiered] {msg}")
+        meta["planes_log"].append(msg)
+
+    def run_plane(plane_id: str, tier: str, queries: list) -> list:
+        if plane_id not in planes_enabled or not queries:
+            return []
+        tagged_queries = queries
+        if plane_id == "P3":
+            tagged_queries = _apply_facet_suffix(queries)
+        batch = _invoke_collect(collect_fn, tagged_queries)
+        batch = _tag_plane_articles(batch, plane_id, tier)
+        meta["planes_run"].append(plane_id)
+        meta["queries_per_plane"][plane_id] = len(tagged_queries)
+        log(f"{plane_id} tier={tier} queries={len(tagged_queries)} articles={len(batch)}")
+        return batch
+
+    import clean_query as cq_mod
+
+    p1_queries = cq_mod.clean_query(
+        [q.strip() for q in (p1_query_list or []) if q and str(q).strip()],
+        max_queries=cfg.get("max_queries_p1", 8),
+    )
+    p1_batch = run_plane("P1", "precision", p1_queries)
+    if p1_batch:
+        all_articles = merge_and_dedupe_articles(all_articles, p1_batch)
+        best_plane = "P1"
+    passed, conf, gate_meta = passes_retrieval_quality_gate(all_articles, input_text)
+    meta["quality_gate"]["P1"] = gate_meta
+    if short_circuit and passed:
+        meta["retrieval_confidence"] = _confidence_from_best_plane("P1", conf)
+        return rerank_tiered_articles(all_articles, input_text), meta
+
+    # P2 — relaxed title/keywords
+    title = resolve_title(title_text, input_text)
+    p2_queries = _cascade_generate_queries(title or input_text, max_queries=8) if title or input_text else []
+    p2_batch = run_plane("P2", "relaxed", p2_queries)
+    if p2_batch:
+        all_articles = merge_and_dedupe_articles(all_articles, p2_batch)
+        if not best_plane:
+            best_plane = "P2"
+    passed, conf, gate_meta = passes_retrieval_quality_gate(all_articles, input_text)
+    meta["quality_gate"]["P2"] = gate_meta
+    if short_circuit and passed:
+        meta["retrieval_confidence"] = _confidence_from_best_plane(best_plane, conf)
+        return rerank_tiered_articles(all_articles, input_text), meta
+
+    # P3 — domain facet suffix
+    p3_seed = p1_queries or p2_queries or _cascade_generate_queries(input_text, max_queries=4)
+    p3_batch = run_plane("P3", "facet", p3_seed)
+    if p3_batch:
+        all_articles = merge_and_dedupe_articles(all_articles, p3_batch)
+        if not best_plane:
+            best_plane = "P3"
+    passed, conf, gate_meta = passes_retrieval_quality_gate(all_articles, input_text)
+    meta["quality_gate"]["P3"] = gate_meta
+    if short_circuit and passed:
+        meta["retrieval_confidence"] = _confidence_from_best_plane(best_plane, conf)
+        return rerank_tiered_articles(all_articles, input_text), meta
+
+    # P4 — broad expansion
+    p4_queries: list = []
+    seen_q: set = set()
+    for prompt in (GENERAL_QUERY_PROMPT, _CASCADE_BROAD_QUERY_PROMPT):
+        batch = _cascade_generate_queries(input_text, general_prompt=prompt, max_queries=max_p4)
+        for q in batch:
+            if q not in seen_q:
+                seen_q.add(q)
+                p4_queries.append(q)
+    p4_queries = cq_mod.clean_query(p4_queries, max_queries=max_p4)
+    det = deterministic_backup_queries(input_text, max_queries=8)
+    for q in det:
+        if q not in seen_q and len(p4_queries) < max_p4:
+            seen_q.add(q)
+            p4_queries.append(q)
+    p4_batch = run_plane("P4", "broad", p4_queries)
+    if p4_batch:
+        all_articles = merge_and_dedupe_articles(all_articles, p4_batch)
+        if not best_plane:
+            best_plane = "P4"
+    passed, conf, gate_meta = passes_retrieval_quality_gate(all_articles, input_text)
+    meta["quality_gate"]["P4"] = gate_meta
+    if short_circuit and passed:
+        meta["retrieval_confidence"] = _confidence_from_best_plane(best_plane, conf)
+        return rerank_tiered_articles(all_articles, input_text), meta
+
+    # P5 — gap-fill missing terms
+    if "P5" in planes_enabled:
+        terms = extract_key_terms(input_text, title)
+        corpus = _article_corpus_text(all_articles)
+        missing = [t for t in terms if t.lower() not in corpus]
+        gap_queries = build_gap_fill_queries(input_text, title, missing)
+        p5_batch = run_plane("P5", "gap_fill", gap_queries)
+        if p5_batch:
+            all_articles = merge_and_dedupe_articles(all_articles, p5_batch)
+            if not best_plane:
+                best_plane = "P5"
+
+    passed, conf, gate_meta = passes_retrieval_quality_gate(all_articles, input_text)
+    meta["quality_gate"]["final"] = gate_meta
+    meta["retrieval_confidence"] = _confidence_from_best_plane(best_plane, conf)
+    meta["article_count"] = len(all_articles)
+    log(
+        f"DONE planes={meta['planes_run']} articles={len(all_articles)} "
+        f"confidence={meta['retrieval_confidence']}"
+    )
+    return rerank_tiered_articles(all_articles, input_text), meta
 
 
 if os.getenv("RATE_LIMIT_CURL_RESILIENCE", "1").lower() in ("1", "true", "yes", "on"):

@@ -74,7 +74,7 @@ def safe_import_module(module_name, import_statement=None, description=None):
             "module_name": error_msg.split("'")[1] if "'" in error_msg else module_name
         }
         failed_imports[module_name] = error_msg
-        logging.error(f"⚠️ MODULE NOT FOUND: {module_name}")
+        logging.error(f"MODULE NOT FOUND: {module_name}")
         logging.error(f"   Error: {error_msg}")
         if description:
             logging.error(f"   Description: {description}")
@@ -89,7 +89,7 @@ def safe_import_module(module_name, import_statement=None, description=None):
             "module_name": module_name
         }
         failed_imports[module_name] = error_msg
-        logging.error(f"⚠️ IMPORT ERROR: {module_name}")
+        logging.error(f"IMPORT ERROR: {module_name}")
         logging.error(f"   Error: {error_msg}")
         if description:
             logging.error(f"   Description: {description}")
@@ -184,9 +184,30 @@ check_missing_api_keys()
 update_queues = defaultdict(asyncio.Queue)
 app = FastAPI()
 
+_uvicorn_loop: Optional[asyncio.AbstractEventLoop] = None
+
+
+def _run_coro_sync(coro, *, timeout: float = 600):
+    """Run an async coroutine on the Uvicorn loop from a background worker thread."""
+    loop = _uvicorn_loop
+    if loop is None:
+        raise RuntimeError("Application event loop not initialized yet")
+    future = asyncio.run_coroutine_threadsafe(coro, loop)
+    return future.result(timeout=timeout)
+
+
 @app.on_event("startup")
 async def startup_event():
     """Log missing modules and API keys on application startup."""
+    global _uvicorn_loop
+    _uvicorn_loop = asyncio.get_running_loop()
+    backend_dir = os.path.dirname(os.path.abspath(__file__))
+    configure_retrieval_state_path(os.path.join(backend_dir, ".active_nerd_state"))
+    restore_active_nerd_profile_from_disk()
+    try:
+        _reload_runtime_env(backend_dir)
+    except Exception as env_err:
+        logging.warning(f"Could not reload runtime env on startup: {env_err}")
     # Update all_warnings with missing modules
     for module_name, info in missing_modules.items():
         all_warnings[f"module_{module_name}"] = {
@@ -201,7 +222,7 @@ async def startup_event():
     
     if all_warnings:
         logging.warning("=" * 60)
-        logging.warning("⚠️  WARNINGS DETECTED")
+        logging.warning("WARNINGS DETECTED")
         logging.warning("=" * 60)
         for warning_key, warning_info in all_warnings.items():
             logging.warning(f"{warning_info.get('description', warning_key)}: {warning_info.get('message', 'N/A')}")
@@ -212,14 +233,14 @@ async def startup_event():
         logging.warning("Use /fetch_hard_backup_config endpoint to perform a hard reset if needed.")
         logging.warning("=" * 60)
     else:
-        logging.info("✅ All required modules and API keys are available.")
+        logging.info("All required modules and API keys are available.")
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # 🔥 Allows all origins (for local dev only)
+    allow_origins=["*"],  # local dev only
     allow_credentials=True,
-    allow_methods=["*"],  # ✅ Allows all HTTP methods
-    allow_headers=["*"],  # ✅ Allows all headers
+    allow_methods=["*"],
+    allow_headers=["*"],
 )
 
 
@@ -231,39 +252,6 @@ asyncio.set_event_loop(loop)
 
 def run_in_executor(func, *args):
     return loop.run_in_executor(executor, func, *args)
-
-def refine_prompts(query_list):
-    """
-    Refines and cleans a list of queries based on user needs.
-    
-    Parameters:
-    - query_list (list): List of queries to refine
-    
-    Returns:
-    - refined_prompt_list (list): List of refined queries
-    """
-    try:
-        # Check if clean_query.py exists and has clean_query function
-        import clean_query
-        if hasattr(clean_query, 'clean_query'):
-            refined_queries = []
-            for query in query_list:
-                try:
-                    refined_query = clean_query.clean_query(query)
-                    refined_queries.append(refined_query)
-                except Exception as e:
-                    print(f"Error refining query '{query}': {str(e)}")
-                    refined_queries.append(query)  # Use original query if refinement fails
-            return refined_queries
-        else:
-            print("clean_query function not found in clean_query.py")
-            return query_list
-    except ImportError:
-        print("clean_query.py not found, returning original queries")
-        return query_list
-    except Exception as e:
-        print(f"Error in refine_prompts: {str(e)}")
-        return query_list
 
 @app.get("/")
 async def root():
@@ -351,14 +339,19 @@ async def fetch_clean_query():
     """Fetch the content of clean_query.py file"""
     try:
         import os
+        from generic_prompts import CLEAN_QUERY_PY_DEFAULT
+
         clean_query_path = os.path.join(os.path.dirname(__file__), "clean_query.py")
-        
+
         if os.path.exists(clean_query_path):
             with open(clean_query_path, 'r', encoding='utf-8') as f:
                 content = f.read()
-            return Response(content=content, media_type="text/plain")
         else:
+            content = CLEAN_QUERY_PY_DEFAULT
+
+        if not content:
             return Response(status_code=404, content="File not found")
+        return Response(content=content, media_type="text/plain")
     except Exception as e:
         return Response(status_code=500, content=f"Error reading file: {str(e)}")
 
@@ -477,25 +470,23 @@ async def process_detailed_combined_query(
     return JSONResponse({"session_id": unique_id})
 
 def process_detailed_combined_logic(input_text, search_db, search_id, id_list, search_doc, file_metadata_list: List[dict], unique_id):
-    loop.run_until_complete(send_update(unique_id, "Creating a procedure..."))
+    sync_send_update(unique_id, "Creating a procedure...")
     id_set = set()
     start_time = time.time()  # Start runtime tracking
     # Step 1: Collect Database Articles
     start_api = time.time()
     db_articles = []
     id_articles = []
+    retrieval_confidence = None
     if search_db:
         print("Searching Article Database...")
-        loop.run_until_complete(send_update(unique_id, "Generating Search Queries..."))
+        sync_send_update(unique_id, "Generating Search Queries...")
         _, _, query_list = query_generation(input_text)
         print("Generated Article Database queries:", query_list)
-        # Refine queries using the refine_prompts function (only if enabled)
-        # Check if query cleaning is enabled in the frontend configuration
         try:
             with open('../customnerd-website/user_env.js', 'r', encoding='utf-8') as file:
                 frontend_content = file.read()
             
-            # Extract the window.env object content
             start_idx = frontend_content.find('{')
             end_idx = frontend_content.rfind('}') + 1
             
@@ -504,11 +495,9 @@ def process_detailed_combined_logic(input_text, search_db, search_id, id_list, s
                 import json5
                 frontend_config = json5.loads(config_str)
                 
-                # Check if query cleaning is enabled
                 query_cleaning_enabled = frontend_config.get('USER_FLOW', {}).get('query_cleaning', {}).get('visible', False)
                 print("Query cleaning enabled:", query_cleaning_enabled)
                 if query_cleaning_enabled:
-                    # Check if clean_query.py file exists
                     clean_query_path = os.path.join(os.path.dirname(__file__), 'clean_query.py')
                     if os.path.exists(clean_query_path):
                         try:
@@ -526,22 +515,50 @@ def process_detailed_combined_logic(input_text, search_db, search_id, id_list, s
         except Exception as e:
             print(f"Error reading frontend config: {e}, using original queries")
         
-        loop.run_until_complete(send_update(unique_id, "5 search queries generated. Collecting articles from Article Database..."))
+        sync_send_update(unique_id, "5 search queries generated. Collecting articles from Article Database...")
         try:
             collect_articles_func = globals().get('collect_articles')
             if collect_articles_func and callable(collect_articles_func):
-                db_articles = collect_articles_with_curl_fallback(collect_articles_func, query_list)
+                use_cascade = is_cascade_mode()
+                print(f"[retrieval] user cascade toggle={'on' if use_cascade else 'off'}")
+                if use_cascade:
+                    db_articles, retrieval_meta = tiered_collect_articles(
+                        lambda ql: collect_articles_with_curl_fallback(collect_articles_func, ql),
+                        input_text,
+                        query_list,
+                    )
+                    if retrieval_meta.get("error"):
+                        logging.warning(
+                            "Tiered retrieval failed (%s); falling back to legacy collect",
+                            retrieval_meta.get("error"),
+                        )
+                        sync_send_update(
+                            unique_id,
+                            "Tiered search unavailable; using standard article search...",
+                        )
+                        db_articles = collect_articles_with_curl_fallback(
+                            collect_articles_func, query_list
+                        )
+                        retrieval_confidence = None
+                    else:
+                        retrieval_confidence = retrieval_meta.get("retrieval_confidence")
+                        print(
+                            f"[tiered] confidence={retrieval_confidence} "
+                            f"planes={retrieval_meta.get('planes_run')}"
+                        )
+                else:
+                    db_articles = collect_articles_with_curl_fallback(collect_articles_func, query_list)
             else:
                 raise NameError("collect_articles function is not available")
         except (NameError, AttributeError) as e:
             error_msg = f"Error: collect_articles function is not available. Missing module: {missing_modules.get('user_search_apis', {}).get('module_name', 'unknown')}"
             logging.error(error_msg)
-            loop.run_until_complete(send_update(unique_id, f"ERROR: {error_msg}. Please check /check_missing_modules for details."))
+            sync_send_update(unique_id, f"ERROR: {error_msg}. Please check /check_missing_modules for details.")
             db_articles = []
         except Exception as e:
             error_msg = f"Error collecting articles: {str(e)}"
             logging.error(error_msg)
-            loop.run_until_complete(send_update(unique_id, f"ERROR: {error_msg}"))
+            sync_send_update(unique_id, f"ERROR: {error_msg}")
             db_articles = []
         
         if search_id and id_list and db_articles:
@@ -551,13 +568,13 @@ def process_detailed_combined_logic(input_text, search_db, search_id, id_list, s
                 # If structure is different, skip filtering
                 pass
         print(f"Collected {len(db_articles)} articles from Database.")
-        loop.run_until_complete(send_update(unique_id, f"Collected {len(db_articles)} articles..."))
+        sync_send_update(unique_id, f"Collected {len(db_articles)} articles...")
 
     end_api = time.time()
 
     # Step 2: Fetch Additional Articles via IDs
     if search_id and id_list:
-        loop.run_until_complete(send_update(unique_id, "Fetching articles by user passed IDs..."))
+        sync_send_update(unique_id, "Fetching articles by user passed IDs...")
         try:
             fetch_articles_func = globals().get('fetch_articles_by_ids') or globals().get(
                 'fetch_articles_by_pmids'
@@ -569,16 +586,16 @@ def process_detailed_combined_logic(input_text, search_db, search_id, id_list, s
         except (NameError, AttributeError) as e:
             error_msg = f"Error: fetch_articles_by_ids function is not available. Missing module: {missing_modules.get('user_list_search', {}).get('module_name', 'unknown')}"
             logging.error(error_msg)
-            loop.run_until_complete(send_update(unique_id, f"ERROR: {error_msg}. Please check /check_missing_modules for details."))
+            sync_send_update(unique_id, f"ERROR: {error_msg}. Please check /check_missing_modules for details.")
             id_articles = []
         except Exception as e:
             error_msg = f"Error fetching articles by IDs: {str(e)}"
             logging.error(error_msg)
-            loop.run_until_complete(send_update(unique_id, f"ERROR: {error_msg}"))
+            sync_send_update(unique_id, f"ERROR: {error_msg}")
             id_articles = []
         else:
             id_set.update(id_list)
-            loop.run_until_complete(send_update(unique_id, f"Fetched {len(id_articles)} articles by user passed IDs..."))
+            sync_send_update(unique_id, f"Fetched {len(id_articles)} articles by user passed IDs...")
 
 
 
@@ -587,7 +604,7 @@ def process_detailed_combined_logic(input_text, search_db, search_id, id_list, s
         # Create async wrapper for concurrent function with progress updates
         async def process_db_articles_with_progress():
             # Start the processing task
-            processing_task = asyncio.get_event_loop().run_in_executor(
+            processing_task = asyncio.get_running_loop().run_in_executor(
                 None, concurrent_organize_database_articles, db_articles, input_text
             )
             
@@ -612,7 +629,7 @@ def process_detailed_combined_logic(input_text, search_db, search_id, id_list, s
             await send_update(unique_id, "Looking into the articles in depth...")
             return result
         
-        db_articles = loop.run_until_complete(process_db_articles_with_progress())
+        db_articles = _run_coro_sync(process_db_articles_with_progress())
         print("Database Articles Processed:", db_articles)
 
 
@@ -635,9 +652,9 @@ def process_detailed_combined_logic(input_text, search_db, search_id, id_list, s
     relevant_items.extend(id_articles)
 
     if len(relevant_items)>0:
-        loop.run_until_complete(send_update(unique_id, f"Classified {len(relevant_items)} relevant articles."))
+        sync_send_update(unique_id, f"Classified {len(relevant_items)} relevant articles.")
     else:
-        loop.run_until_complete(send_update(unique_id, f"Classified relevant articles. "))
+        sync_send_update(unique_id, f"Classified relevant articles. ")
 
 
     if search_doc and doc_articles:
@@ -647,10 +664,10 @@ def process_detailed_combined_logic(input_text, search_db, search_id, id_list, s
     all_relevant_items = relevant_items
     # Write all relevant items to a file for debugging/inspection
     print(f"Synthesizing final response for {len(all_relevant_items)} articles...")
-    loop.run_until_complete(send_update(unique_id, f"Synthesizing final response..."))
+    sync_send_update(unique_id, f"Synthesizing final response...")
     all_relevant_items = trim_relevant_articles_by_token_limit(all_relevant_items, input_text)
-    final_result = generate_final_response(all_relevant_items, input_text)
-    loop.run_until_complete(send_update(unique_id, "Generated final response..."))
+    final_result = generate_final_response(all_relevant_items, input_text, retrieval_confidence)
+    sync_send_update(unique_id, "Generated final response...")
     print("Passing all relevant items to collect_referenced_articles...")
     citation_generation = print_referenced_articles(final_result, all_relevant_items)
     print("Citation Generation:", citation_generation)
@@ -667,7 +684,7 @@ def process_detailed_combined_logic(input_text, search_db, search_id, id_list, s
             "citations_obj": ["Not Found"],
         }
 
-    loop.run_until_complete(send_update(unique_id, result_object))
+    sync_send_update(unique_id, result_object)
 
     # Append result to historical_answer.json if chat history is enabled in frontend config
     try:
@@ -724,7 +741,7 @@ def process_pdf_articles_parallel(files_info, session_id, max_threads=5):
         List[dict]: List of all formatted articles extracted from PDFs.
     """
     # Update the session to indicate the start of parallel processing
-    loop.run_until_complete(send_update(session_id, "Processing PDF articles..."))
+    sync_send_update(session_id, "Processing PDF articles...")
 
     pdf_articles = []
 
@@ -752,7 +769,7 @@ def process_pdf_articles_parallel(files_info, session_id, max_threads=5):
                 print(f"Error processing file {filename}: {str(e)}")
 
     # Update the session to indicate completion of parallel processing
-    loop.run_until_complete(send_update(session_id, f"Processed {len(pdf_articles)+1} PDF article(s)..."))
+    sync_send_update(session_id, f"Processed {len(pdf_articles)+1} PDF article(s)...")
     print("PDF Articles:", pdf_articles)
     return pdf_articles
 
@@ -802,7 +819,6 @@ async def update_frontend_config(
             config_dict['FRONTEND_FLOW']['SITE_LOGO'] = f"assets/customnerd_logo{os.path.splitext(logo_file.filename)[1]}"
         elif 'FRONTEND_FLOW' in config_dict and 'SITE_LOGO' not in config_dict['FRONTEND_FLOW']:
             # If no logo is provided and no existing logo path, set default
-            # Check if customnerd_logo.png exists, otherwise use fallback
             if os.path.exists("../customnerd-website/assets/customnerd_logo.png"):
                 config_dict['FRONTEND_FLOW']['SITE_LOGO'] = "assets/customnerd_logo.png"
             else:
@@ -870,33 +886,27 @@ async def update_env_config(config: dict):
         # Trim all the keys of white space in the input config
         trimmed_config = {key.strip(): value for key, value in config.items()}
         
-        # Write the updated content directly to the variables.env file
         with open('variables.env', 'w', encoding='utf-8') as file:
             for key, value in trimmed_config.items():
                 file.write(f'{key}="{value}"\n')
         
-        # Reload environment variables
         try:
             from dotenv import load_dotenv
             load_dotenv('variables.env', override=True)
             
-            # Reinitialize OpenAI client
             from openai_executions import reinitialize_openai_client
             reinitialize_openai_client()
             
-            # Also reinitialize Gemini client if available
             try:
                 from gemini_executions import reinitialize_gemini_client
                 reinitialize_gemini_client()
             except ImportError:
                 print("Gemini client not available for reinitialization")
-            # Reinitialize Claude client if available
             try:
                 from claude_executions import reinitialize_claude_client
                 reinitialize_claude_client()
             except ImportError:
                 print("Claude client not available for reinitialization")
-            # Reinitialize Ollama client if available
             try:
                 from ollama_executions import reinitialize_ollama_client
                 reinitialize_ollama_client()
@@ -1208,7 +1218,6 @@ async def fetch_hard_backup_config():
                 logging.info("Created empty historical_answer.json (backup not found)")
         except Exception as e:
             logging.warning(f"Could not copy historical_answer.json: {str(e)}")
-            # Best effort - create empty history if copy fails
             try:
                 history_dst = os.path.join(backend_dir, "historical_answer.json")
                 with open(history_dst, 'w', encoding='utf-8') as hf:
@@ -1228,6 +1237,11 @@ async def send_update(session_id, data):
     if session_id in update_queues:
         print("Sending update ",data," to session_id:", session_id)
         await update_queues[session_id].put(data)
+
+
+def sync_send_update(session_id, data, *, timeout: float = 60):
+    """Thread-safe SSE update from sync background tasks."""
+    _run_coro_sync(send_update(session_id, data), timeout=timeout)
 
 def calculate_similarity(sentences, source_sentence):
     # Combine source sentence with the list of sentences
@@ -1267,11 +1281,9 @@ async def save_state(state_name: str = Form(...)):
             "variables.env"
         ]
         
-        # Copy each file if it exists
         for file in files_to_copy:
             source_path = None
             if file == "customnerd_logo.png":
-                # Check if customnerd_logo.png exists, otherwise use fallback
                 logo_path1 = os.path.join(base_dir, "customnerd-website", "assets", "customnerd_logo.png")
                 logo_path2 = os.path.join(base_dir, "customnerd-website", "assets", "custom_nerd_default_logo.png")
                 if os.path.exists(logo_path1):
@@ -1319,7 +1331,6 @@ async def save_state(state_name: str = Form(...)):
                     with open(history_dest, 'w', encoding='utf-8') as hf:
                         json.dump([], hf, ensure_ascii=False, indent=2)
         except Exception as e:
-            # Best effort; do not fail saving state due to config issues
             logging.warning(f"Failed to handle history: {str(e)}")
             try:
                 history_dest = os.path.join(state_dir, "historical_answer.json")
@@ -1346,47 +1357,121 @@ async def list_saved_states():
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
+_ENV_SECRET_KEYS = (
+    "OPENAI_API_KEY",
+    "GEMINI_API_KEY",
+    "ANTHROPIC_API_KEY",
+    "NCBI_API_KEY",
+    "STACK_API_KEY",
+    "ENTREZ_EMAIL",
+    "ELSEVIER_API_KEY",
+    "WILEY_API_KEY",
+    "SPRINGER_API_KEY",
+    "HF_TOKEN",
+    "MYSQL_PASSWORD",
+)
+
+
+def _parse_env_file(path: str) -> dict:
+    values: dict = {}
+    if not os.path.exists(path):
+        return values
+    with open(path, "r", encoding="utf-8") as file:
+        for line in file:
+            line = line.strip()
+            if not line or line.startswith("#") or "=" not in line:
+                continue
+            key, _, val = line.partition("=")
+            values[key.strip()] = val.strip().strip('"')
+    return values
+
+
+def _write_env_file(path: str, values: dict) -> None:
+    with open(path, "w", encoding="utf-8") as file:
+        for key, value in values.items():
+            file.write(f'{key}="{value}"\n')
+
+
+def _env_value_empty(value: str) -> bool:
+    return not str(value or "").strip().strip('"')
+
+
+def _merge_variables_env_preserving_secrets(dest_path: str, source_path: str) -> None:
+    """Keep existing API keys when saved-state variables.env has blank values."""
+    existing = _parse_env_file(dest_path)
+    incoming = _parse_env_file(source_path)
+    merged = dict(existing)
+    merged.update(incoming)
+    for key in _ENV_SECRET_KEYS:
+        if (
+            key in incoming
+            and _env_value_empty(incoming.get(key, ""))
+            and not _env_value_empty(existing.get(key, ""))
+        ):
+            merged[key] = existing[key]
+    _write_env_file(dest_path, merged)
+
+
+def _reload_runtime_env(backend_dir: str) -> None:
+    from dotenv import load_dotenv
+
+    load_dotenv(os.path.join(backend_dir, "variables.env"), override=True)
+    try:
+        from openai_executions import reinitialize_openai_client
+
+        reinitialize_openai_client()
+    except Exception as openai_err:
+        logging.warning(f"Could not reinitialize OpenAI client: {openai_err}")
+    for module_name, func_name in (
+        ("gemini_executions", "reinitialize_gemini_client"),
+        ("claude_executions", "reinitialize_claude_client"),
+    ):
+        try:
+            mod = __import__(module_name, fromlist=[func_name])
+            getattr(mod, func_name)()
+        except Exception:
+            pass
+
+
 @app.post("/load_state")
 async def load_state(state_name: str = Form(...)):
     try:
-        # Get base directory (parent of customnerd-backend)
         backend_dir = os.path.dirname(os.path.abspath(__file__))
         base_dir = os.path.dirname(backend_dir)
         
-        # Use os.path.join for cross-platform path handling
         state_dir = os.path.join(backend_dir, "saved_states", state_name)
         if not os.path.exists(state_dir):
             raise HTTPException(status_code=404, detail=f"State '{state_name}' not found")
         
-        # List of files to copy
         files_to_copy = [
             "customnerd_logo.png",
             "openai_prompts.py",
             "user_env.js",
             "user_list_search.py",
             "user_search_apis.py",
-            "clean_query.py",
             "variables.env"
         ]
         
-        # Copy each file if it exists
         for file in files_to_copy:
             source_path = os.path.join(state_dir, file)
             if os.path.exists(source_path):
                 try:
                     if file == "customnerd_logo.png":
-                        # Ensure assets directory exists
                         website_assets_dir = os.path.join(base_dir, "customnerd-website", "assets")
                         os.makedirs(website_assets_dir, exist_ok=True)
-                        # Copy the logo from saved state
                         dest_path = os.path.join(website_assets_dir, "customnerd_logo.png")
                         shutil.copy2(source_path, dest_path)
                     elif file == "user_env.js":
                         website_dir = os.path.join(base_dir, "customnerd-website")
                         dest_path = os.path.join(website_dir, "user_env.js")
                         shutil.copy2(source_path, dest_path)
+                    elif file == "variables.env":
+                        dest_path = os.path.join(backend_dir, file)
+                        if os.path.exists(dest_path):
+                            _merge_variables_env_preserving_secrets(dest_path, source_path)
+                        else:
+                            shutil.copy2(source_path, dest_path)
                     else:
-                        # Copy to backend directory
                         dest_path = os.path.join(backend_dir, file)
                         shutil.copy2(source_path, dest_path)
                 except Exception as file_error:
@@ -1406,7 +1491,6 @@ async def load_state(state_name: str = Form(...)):
                 except Exception as fallback_error:
                     logging.warning(f"Failed to use fallback logo: {str(fallback_error)}")
 
-        # Ensure historical_answer.json exists; load from state if present, else create empty
         history_src = os.path.join(state_dir, "historical_answer.json")
         history_dst = os.path.join(backend_dir, "historical_answer.json")
         try:
@@ -1416,14 +1500,26 @@ async def load_state(state_name: str = Form(...)):
                 with open(history_dst, 'w', encoding='utf-8') as hf:
                     json.dump([], hf, ensure_ascii=False, indent=2)
         except Exception as history_error:
-            # Best effort - create empty history if copy fails
             logging.warning(f"Failed to copy history: {str(history_error)}")
             try:
                 with open(history_dst, 'w', encoding='utf-8') as hf:
                     json.dump([], hf, ensure_ascii=False, indent=2)
             except Exception:
                 pass
-        
+
+        try:
+            _reload_runtime_env(backend_dir)
+        except Exception as env_err:
+            logging.warning(f"Could not reload variables.env after load_state: {env_err}")
+
+        try:
+            clear_retrieval_profile_override()
+            set_active_nerd_profile(state_name)
+        except Exception as profile_err:
+            logging.warning(
+                f"Could not set retrieval profile for {state_name!r}: {profile_err}; using legacy defaults"
+            )
+
         return {"status": "success", "message": f"State '{state_name}' loaded successfully"}
     except HTTPException:
         # Re-raise HTTP exceptions (like 404)
@@ -1432,6 +1528,20 @@ async def load_state(state_name: str = Form(...)):
         # Log the full error for debugging
         logging.error(f"Error loading state '{state_name}': {str(e)}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"Failed to load state: {str(e)}")
+
+
+@app.post("/eval/retrieval_profile")
+async def eval_retrieval_profile(
+    state_name: str = Form(...),
+    mode: Optional[str] = Form(None),
+):
+    """In-memory retrieval profile for benchmark runs."""
+    set_active_nerd_profile(state_name)
+    if mode and mode.strip().lower() in ("legacy", "cascade"):
+        set_retrieval_profile_override({"mode": mode.strip().lower()})
+    else:
+        clear_retrieval_profile_override()
+    return {"status": "success", "profile": get_retrieval_profile()}
 
 @app.post("/delete_state")
 async def delete_state(state_name: str = Form(...)):
@@ -1563,7 +1673,7 @@ async def similar_questions(query: str, threshold: float = 0.2, limit: int = 3):
         word_tfidf = word_vectorizer.fit_transform(canonical_questions + [canonical_query])
         word_sims = cosine_similarity(word_tfidf[-1], word_tfidf[:-1]).flatten()
 
-        # Char n-gram TF-IDF (robust to word order/noise)
+        # Char n-gram TF-IDF (word-order insensitive)
         char_vectorizer = TfidfVectorizer(analyzer='char_wb', ngram_range=(3, 5), lowercase=True)
         char_tfidf = char_vectorizer.fit_transform(canonical_questions + [canonical_query])
         char_sims = cosine_similarity(char_tfidf[-1], char_tfidf[:-1]).flatten()

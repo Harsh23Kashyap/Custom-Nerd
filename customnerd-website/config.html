@@ -332,7 +332,7 @@
                     </div>
                     <div>
                         <h4 style="margin-bottom: 8px; color: #2c3e50; font-size: 16px; font-weight: 600;">Delete Saved State</h4>
-                        <p style="color: #6c757d; margin-bottom: 0; font-size: 13px;">⚠️ Warning: This action cannot be undone</p>
+                        <p style="color: #6c757d; margin-bottom: 0; font-size: 13px;">Warning: This action cannot be undone</p>
                     </div>
                 </div>
                 <div style="display: flex; gap: 12px; align-items: center; margin-top: 15px;">
@@ -1110,10 +1110,10 @@
                         <option value="codellama:7b">codellama:7b — 7B · ~3.8 GB · Meta Code Llama</option>
                         <option value="qwen2.5-coder:7b">qwen2.5-coder:7b — 7B · ~4.4 GB · Best coding model</option>
                     </optgroup>
-                    <optgroup label="☁️ Cloud / Hosted via Ollama">
+                    <optgroup label="Cloud / Hosted via Ollama">
                         <option value="kimi-k2.5:cloud">kimi-k2.5:cloud — Cloud · No local storage · Moonshot Kimi K2.5</option>
                     </optgroup>
-                    <optgroup id="omg-installed-optgroup" label="✅ Installed on your machine" style="display:none"></optgroup>
+                    <optgroup id="omg-installed-optgroup" label="Installed on your machine" style="display:none"></optgroup>
                     <optgroup label="✏️ Custom">
                         <option value="custom">Custom model name — type below</option>
                     </optgroup>
@@ -1268,7 +1268,7 @@
 
                                 var hdrRow = document.createElement('tr');
                                 hdrRow.className = 'omg-section-hdr omg-dynamic-installed';
-                                hdrRow.innerHTML = '<td colspan="8">✅ Installed on your machine — ready to use right now</td>';
+                                hdrRow.innerHTML = '<td colspan="8">Installed on your machine — ready to use</td>';
                                 tbody.insertBefore(hdrRow, insertRef);
                                 var afterEl = hdrRow;
 
@@ -1488,6 +1488,8 @@
                         </label>
                     </div>
                 </div>
+
+                <div data-user-flow-diagram="normal-search"></div>
                 
                 <div id="normal_search_content" style="display: none;">
                     <div class="toggle-container">
@@ -1528,12 +1530,6 @@
                                 <textarea id="normal_search" name="normal_search" rows="15" readonly></textarea>
                             </div>
                         </div>
-                        <div class="code-note">
-                            Make sure to use the same API name in the environment configuration which you add/see in the code above.
-                        </div>
-                        <div class="code-note">
-                            The article_counter is the number of articles to collect from the database. You can change it in the code above
-                        </div>
                     </div>
                 </div>
             </div>
@@ -1550,6 +1546,8 @@
                         </label>
                     </div>
                 </div>
+
+                <div data-user-flow-diagram="id-specific-search"></div>
                 
                 <div id="id_specific_search_content" style="display: none;">
                     <div class="toggle-container">
@@ -1591,9 +1589,6 @@
                             </div>
                         </div>
                     </div>
-                    <div class="code-note">
-                        Make sure to use the same API name in the environment configuration which you add/see in the code above.
-                    </div>
                 </div>
             </div>
             
@@ -1609,6 +1604,8 @@
                         </label>
                     </div>
                 </div>
+
+                <div data-user-flow-diagram="local-document-search"></div>
                 
                 <div id="local_document_search_content" style="display: none;">
                     <div class="toggle-container">
@@ -1642,10 +1639,12 @@
                         </label>
                     </div>
                 </div>
+
+                <div data-user-flow-diagram="query-cleaning"></div>
                 
                 <div id="query_cleaning_content" style="display: none;">
                     <div class="ai-button-container">
-                        <button type="button" class="ai-code-btn" id="ai_code_btn_query_cleaning" onclick="generateAICode('query_cleaning', 'list_search')" title="Generate code using AI">
+                        <button type="button" class="ai-code-btn" id="ai_code_btn_query_cleaning" onclick="generateAICode('query_cleaning', 'clean_query')" title="Generate code using AI">
                             <i class="fas fa-robot"></i> 
                             <span>AI Code Generator</span>
                             <div class="ai-button-glow"></div>
@@ -1671,11 +1670,21 @@
                                 <textarea id="query_cleaning" name="query_cleaning" rows="15" readonly></textarea>
                             </div>
                         </div>
-                        <div class="code-note">
-                            The function should be named `clean_query(query)` and should refine the query based on user needs.
-                        </div>
                     </div>
                 </div>
+            </div>
+
+            <div class="search-section">
+                <div class="section-header" style="display: flex; align-items: center;">
+                    <h4 class="section-title" style="margin-right: 10px;">Deep Search</h4>
+                    <div class="toggle-switch" style="margin-left: 20px;">
+                        <input type="checkbox" id="edit_cascade_retrieval_visible">
+                        <label for="edit_cascade_retrieval_visible" class="toggle-label">
+                            <span class="toggle-inner"></span>
+                        </label>
+                    </div>
+                </div>
+                <div data-user-flow-diagram="deep-search"></div>
             </div>
             
         <div class="search-section">
@@ -1688,9 +1697,7 @@
                     </label>
                 </div>
             </div>
-            <div class="code-note">
-                Enables reference display alongside answers.<br>Note: Reference section visibility depends on proper Nerd Engine configuration and may appear empty if not configured.
-            </div>
+            <div data-user-flow-diagram="show-references"></div>
         </div>
 
         <div class="search-section">
@@ -1704,10 +1711,7 @@
                 </div>
                
             </div>
-            <!-- Always-visible info -->
-            <div class="code-note">
-                When enabled, your answers are securely saved in your chat history to help us improve recommendations for future searches. You can clear your history at any time.
-            </div>
+            <div data-user-flow-diagram="chat-history"></div>
             <!-- Conditional note (only when toggle is ON) -->
             <div id="chat_history_note" class="code-note" style="background: #f6f8fa; border-radius: 8px; padding: 10px 14px; margin-top: 6px; color: #666; font-size: 13px; line-height: 1.6; box-shadow: 0 1px 4px rgba(0,0,0,0.02); display: none;">
                 <strong>Note:</strong> Chat history is synced, but you may lose the latest unsaved changes. Make sure to save the state again to keep the new chat history of questions asked and responses.
@@ -1967,6 +1971,7 @@
     </script>
     <script src="user_env.js"></script>
     <script src="user_based.js"></script>
+    <script src="user-flow-diagrams.js"></script>
     <script src="config.js"></script>
     <script>
         (function(){

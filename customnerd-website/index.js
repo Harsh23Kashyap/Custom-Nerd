@@ -925,7 +925,7 @@ async function displayStoredAnswer(questionText) {
         resultsElement.classList.remove('hidden');
         resultsElement.style.display = 'flex';
 
-        // Leverage getAnswer to parse and prepare localStorage artifacts from stored answer
+        // Use getAnswer to parse stored answer into localStorage
         const answer = await getAnswer(questionText || '');
 
         if (answer) {

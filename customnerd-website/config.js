@@ -1045,7 +1045,10 @@ async function loadBackendFilesConfig() {
         // Query Cleaning Section
         document.getElementById('query_cleaning').value = initialBackendFilesConfig.query_cleaning || '';
         document.getElementById('edit_query_cleaning').checked = initialConfig.USER_FLOW.query_cleaning?.visible ?? false;
-        
+
+        document.getElementById('edit_cascade_retrieval_visible').checked =
+            initialConfig.USER_FLOW.cascade_retrieval?.visible ?? false;
+
         // The query cleaning visibility is already handled by the existing edit_query_cleaning toggle
         // which controls the query_cleaning.visible setting in the frontend config
         
@@ -1117,6 +1120,11 @@ async function updateBackendFilesConfig() {
         userFlow.query_cleaning = {};
     }
     userFlow.query_cleaning.visible = document.getElementById('edit_query_cleaning').checked;
+
+    if (!userFlow.cascade_retrieval) {
+        userFlow.cascade_retrieval = {};
+    }
+    userFlow.cascade_retrieval.visible = document.getElementById('edit_cascade_retrieval_visible').checked;
 
     userFlow.reference_section.visible = document.getElementById('edit_reference_section_visible').checked;
     // Chat History Section
@@ -3548,75 +3556,20 @@ function toggleShowReferencesSection() {
     }
 }
 
-// Load clean_query.py content
+// Load clean_query.py content from backend (default lives in generic_prompts.py)
 async function loadCleanQueryContent() {
+    const textarea = document.getElementById('query_cleaning');
     try {
         const response = await fetch(`${baseURL}/fetch_clean_query`);
         if (response.ok) {
-            const content = await response.text();
-            document.getElementById('query_cleaning').value = content;
+            textarea.value = await response.text();
         } else {
-            // If file doesn't exist, show instructions
-            const instructions = `def clean_query(query):
-    """
-    Cleans and refines a query based on user needs.
-    
-    Parameters:
-    - query (str): The query to clean and refine
-    
-    Returns:
-    - str: The cleaned and refined query
-    """
-    if not query or not isinstance(query, str):
-        return query
-    
-    # Basic cleaning - remove extra whitespace and normalize
-    cleaned_query = query.strip()
-    
-    # Remove common query artifacts
-    cleaned_query = cleaned_query.replace('"', '"').replace('"', '"')
-    cleaned_query = cleaned_query.replace(''', "'").replace(''', "'")
-    
-    # Remove excessive punctuation
-    import re
-    cleaned_query = re.sub(r'[^\\w\\s\\-\\(\\)\\[\\]\\/\\:\\.\\,\\?]', ' ', cleaned_query)
-    cleaned_query = re.sub(r'\\s+', ' ', cleaned_query)
-    
-    return cleaned_query.strip()`;
-            
-            document.getElementById('query_cleaning').value = instructions;
+            console.error('Failed to load clean_query.py:', response.status, await response.text());
+            textarea.value = '';
         }
     } catch (error) {
         console.error('Error loading clean_query.py:', error);
-        // Show instructions if there's an error
-        const instructions = `def clean_query(query):
-    """
-    Cleans and refines a query based on user needs.
-    
-    Parameters:
-    - query (str): The query to clean and refine
-    
-    Returns:
-    - str: The cleaned and refined query
-    """
-    if not query or not isinstance(query, str):
-        return query
-    
-    # Basic cleaning - remove extra whitespace and normalize
-    cleaned_query = query.strip()
-    
-    # Remove common query artifacts
-    cleaned_query = cleaned_query.replace('"', '"').replace('"', '"')
-    cleaned_query = cleaned_query.replace(''', "'").replace(''', "'")
-    
-    # Remove excessive punctuation
-    import re
-    cleaned_query = re.sub(r'[^\\w\\s\\-\\(\\)\\[\\]\\/\\:\\.\\,\\?]', ' ', cleaned_query)
-    cleaned_query = re.sub(r'\\s+', ' ', cleaned_query)
-    
-    return cleaned_query.strip()`;
-        
-        document.getElementById('query_cleaning').value = instructions;
+        textarea.value = '';
     }
 }
 

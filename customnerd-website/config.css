@@ -3482,6 +3482,35 @@ input[type="color"]:focus {
     backdrop-filter: blur(10px);
 }
 
+        .flow-help,
+        .cascade-help {
+            margin-top: 16px;
+            padding: 16px;
+            border-radius: 12px;
+            background: rgba(255, 255, 255, 0.12);
+            backdrop-filter: blur(10px);
+        }
+
+        .flow-help-diagram,
+        .cascade-help-diagram {
+            display: block;
+            max-width: 640px;
+            margin: 0 auto;
+        }
+
+        .flow-help-caption,
+        .cascade-help-caption {
+            margin: 16px 0 0;
+            text-align: center;
+            font-size: 14px;
+            line-height: 1.5;
+            color: var(--text-color, #6c757d);
+            font-style: normal;
+            max-width: 560px;
+            margin-left: auto;
+            margin-right: auto;
+        }
+
 /* Search Section Styles */
 .search-section {
     background: rgba(255, 255, 255, 0.05);

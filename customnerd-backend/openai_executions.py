@@ -4,7 +4,6 @@ import time
 import logging
 from typing import Any, Dict, Optional
 
-# Initialize OpenAI client with API key from environment
 api_key = os.getenv('OPENAI_API_KEY')
 if not api_key:
     print("Warning: OPENAI_API_KEY not found in environment variables")
@@ -16,10 +15,6 @@ MAX_RETRIES = 3            # network / rate-limit retries
 BACKOFF_SECS = 2           # exponential back-off base
 
 def reinitialize_openai_client():
-    """
-    Reinitialize the OpenAI client with the current environment variables.
-    This is useful when the API key is updated through the web interface.
-    """
     global client
     api_key = os.getenv('OPENAI_API_KEY')
     if not api_key:
@@ -225,7 +220,7 @@ def generate_final_response_openai(all_relevant_articles, query, FINAL_RESPONSE_
     
     return final_output
 
-def generate_code_from_content_openai(article_content, type, system_prompt_function_generator_list_search, system_prompt_function_generator_id_search):
+def generate_code_from_content_openai(article_content, type, system_prompt_function_generator_list_search, system_prompt_function_generator_id_search, system_prompt_function_generator_clean_query=None):
     """
     OpenAI implementation for generating code from content.
     """
@@ -233,13 +228,13 @@ def generate_code_from_content_openai(article_content, type, system_prompt_funct
         raise ValueError("OpenAI client not initialized. Please check your OPENAI_API_KEY in the environment variables.")
     
     try:
-        # Select the appropriate system prompt based on type
         if type == "list_search":
             system_prompt = system_prompt_function_generator_list_search
         elif type == "id_search":
             system_prompt = system_prompt_function_generator_id_search
+        elif type == "clean_query" and system_prompt_function_generator_clean_query:
+            system_prompt = system_prompt_function_generator_clean_query
         else:
-            # Default to list_search for unknown types
             system_prompt = system_prompt_function_generator_list_search
         
         response = client.chat.completions.create(
@@ -363,7 +358,7 @@ Return ONLY the JSON described in the system instructions.
 
     raw = response.choices[0].message.content.strip()
 
-    # try to extract JSON robustly (some models add backticks — strip them)
+    # extract JSON (strip backticks if present)
     # remove leading/trailing backticks or markdown fences
     cleaned = re.sub(r"^```(?:json)?\s*|\s*```$", "", raw, flags=re.IGNORECASE).strip()
 
