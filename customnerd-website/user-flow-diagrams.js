@@ -65,16 +65,16 @@
                 '<rect x="336" y="8" width="296" height="172" rx="12" fill="url(#uid-on-bg)" stroke="#007bff" stroke-width="1.5"/>' +
                 '<text x="484" y="34" text-anchor="middle" font-size="13" font-weight="700" fill="#1E40AF" font-family="system-ui,sans-serif">ID lookup</text>' +
                 '<text x="484" y="50" text-anchor="middle" font-size="11" fill="#64748B" font-family="system-ui,sans-serif">Toggle on</text>' +
-                '<rect x="364" y="58" width="240" height="36" rx="8" fill="#FFFFFF" stroke="#93C5FD" stroke-width="1.5"/>' +
-                '<text x="380" y="80" font-size="10" font-weight="600" fill="#334155" font-family="system-ui,sans-serif">Article IDs</text>' +
-                '<text x="380" y="86" font-size="9" fill="#64748B" font-family="monospace">1042, 8821, 330</text>' +
-                '<line x1="484" y1="94" x2="484" y2="108" stroke="#007bff" stroke-width="1.5" marker-end="url(#uid-arrow-blue)"/>' +
-                '<rect x="420" y="112" width="128" height="28" rx="6" fill="#FFFFFF" stroke="#007bff" stroke-width="1.5"/>' +
-                '<text x="484" y="130" text-anchor="middle" font-size="10" fill="#334155" font-family="system-ui,sans-serif">Fetch by ID</text>' +
-                '<line x1="484" y1="140" x2="484" y2="152" stroke="#007bff" stroke-width="1.5" marker-end="url(#uid-arrow-blue)"/>' +
-                '<rect x="438" y="156" width="36" height="20" rx="3" fill="#007bff" opacity="0.85"/><text x="456" y="170" text-anchor="middle" font-size="8" font-weight="700" fill="#FFFFFF" font-family="system-ui,sans-serif">1042</text>' +
-                '<rect x="478" y="156" width="36" height="20" rx="3" fill="#007bff" opacity="0.55"/><text x="496" y="170" text-anchor="middle" font-size="8" font-weight="700" fill="#FFFFFF" font-family="system-ui,sans-serif">8821</text>' +
-                '<rect x="518" y="156" width="36" height="20" rx="3" fill="#007bff" opacity="0.35"/><text x="536" y="170" text-anchor="middle" font-size="8" font-weight="700" fill="#FFFFFF" font-family="system-ui,sans-serif">330</text>' +
+                '<rect x="364" y="58" width="240" height="40" rx="8" fill="#FFFFFF" stroke="#93C5FD" stroke-width="1.5"/>' +
+                '<text x="376" y="74" font-size="9" font-weight="600" fill="#334155" font-family="system-ui,sans-serif">Article IDs</text>' +
+                '<text x="376" y="88" font-size="8" fill="#64748B" font-family="monospace">1042, 8821, 330</text>' +
+                '<line x1="484" y1="98" x2="484" y2="110" stroke="#007bff" stroke-width="1.5" marker-end="url(#uid-arrow-blue)"/>' +
+                '<rect x="420" y="112" width="128" height="26" rx="6" fill="#FFFFFF" stroke="#007bff" stroke-width="1.5"/>' +
+                '<text x="484" y="129" text-anchor="middle" font-size="10" fill="#334155" font-family="system-ui,sans-serif">Fetch by ID</text>' +
+                '<line x1="484" y1="138" x2="484" y2="148" stroke="#007bff" stroke-width="1.5" marker-end="url(#uid-arrow-blue)"/>' +
+                '<rect x="438" y="152" width="36" height="18" rx="3" fill="#007bff" opacity="0.85"/><text x="456" y="164" text-anchor="middle" font-size="8" font-weight="700" fill="#FFFFFF" font-family="system-ui,sans-serif">1042</text>' +
+                '<rect x="478" y="152" width="36" height="18" rx="3" fill="#007bff" opacity="0.55"/><text x="496" y="164" text-anchor="middle" font-size="8" font-weight="700" fill="#FFFFFF" font-family="system-ui,sans-serif">8821</text>' +
+                '<rect x="518" y="152" width="36" height="18" rx="3" fill="#007bff" opacity="0.35"/><text x="536" y="164" text-anchor="middle" font-size="8" font-weight="700" fill="#FFFFFF" font-family="system-ui,sans-serif">330</text>' +
                 '<rect x="548" y="8" width="76" height="20" rx="10" fill="#DCFCE7"/>' +
                 '<text x="586" y="22" text-anchor="middle" font-size="10" font-weight="700" fill="#166534" font-family="system-ui,sans-serif">Exact match</text>' +
                 '</svg>'
@@ -149,12 +149,12 @@
                 '<line x1="456" y1="84" x2="472" y2="84" stroke="#007bff" stroke-width="1.5" marker-end="url(#uqc-arrow-blue)"/>' +
                 '<rect x="472" y="68" width="72" height="32" rx="6" fill="#007bff"/>' +
                 '<text x="508" y="88" text-anchor="middle" font-size="9" font-weight="700" fill="#FFFFFF" font-family="monospace">clean_query</text>' +
-                '<line x1="544" y1="84" x2="560" y2="84" stroke="#007bff" stroke-width="1.5" marker-end="url(#uqc-arrow-blue)"/>' +
-                '<rect x="380" y="118" width="208" height="52" rx="8" fill="#FFFFFF" stroke="#007bff" stroke-width="1.5"/>' +
-                '<text x="396" y="136" font-size="9" font-weight="700" fill="#334155" font-family="system-ui,sans-serif">Search list</text>' +
-                '<rect x="396" y="142" width="72" height="16" rx="4" fill="#BFDBFE"/><text x="432" y="153" text-anchor="middle" font-size="8" fill="#1E40AF" font-family="system-ui,sans-serif">query 1</text>' +
-                '<rect x="474" y="142" width="72" height="16" rx="4" fill="#BFDBFE"/><text x="510" y="153" text-anchor="middle" font-size="8" fill="#1E40AF" font-family="system-ui,sans-serif">query 2</text>' +
-                '<rect x="396" y="162" width="72" height="16" rx="4" fill="#BFDBFE" opacity="0.6"/><text x="432" y="173" text-anchor="middle" font-size="8" fill="#1E40AF" font-family="system-ui,sans-serif">query 3</text>' +
+                '<line x1="508" y1="100" x2="508" y2="112" stroke="#007bff" stroke-width="1.5" marker-end="url(#uqc-arrow-blue)"/>' +
+                '<rect x="364" y="114" width="240" height="58" rx="8" fill="#FFFFFF" stroke="#007bff" stroke-width="1.5"/>' +
+                '<text x="380" y="130" font-size="9" font-weight="700" fill="#334155" font-family="system-ui,sans-serif">Search list</text>' +
+                '<rect x="376" y="138" width="68" height="14" rx="4" fill="#BFDBFE"/><text x="410" y="148" text-anchor="middle" font-size="8" fill="#1E40AF" font-family="system-ui,sans-serif">query 1</text>' +
+                '<rect x="450" y="138" width="68" height="14" rx="4" fill="#BFDBFE"/><text x="484" y="148" text-anchor="middle" font-size="8" fill="#1E40AF" font-family="system-ui,sans-serif">query 2</text>' +
+                '<rect x="524" y="138" width="68" height="14" rx="4" fill="#BFDBFE" opacity="0.75"/><text x="558" y="148" text-anchor="middle" font-size="8" fill="#1E40AF" font-family="system-ui,sans-serif">query 3</text>' +
                 '<rect x="548" y="8" width="76" height="20" rx="10" fill="#DCFCE7"/>' +
                 '<text x="586" y="22" text-anchor="middle" font-size="10" font-weight="700" fill="#166534" font-family="system-ui,sans-serif">Ready</text>' +
                 '</svg>'
@@ -229,16 +229,17 @@
                 '<rect x="336" y="8" width="296" height="168" rx="12" fill="url(#uref-on-bg)" stroke="#007bff" stroke-width="1.5"/>' +
                 '<text x="484" y="34" text-anchor="middle" font-size="13" font-weight="700" fill="#1E40AF" font-family="system-ui,sans-serif">References shown</text>' +
                 '<text x="484" y="50" text-anchor="middle" font-size="11" fill="#64748B" font-family="system-ui,sans-serif">Toggle on</text>' +
-                '<rect x="364" y="58" width="240" height="68" rx="10" fill="#FFFFFF" stroke="#93C5FD" stroke-width="1.5"/>' +
-                '<text x="380" y="76" font-size="11" font-weight="700" fill="#334155" font-family="system-ui,sans-serif">Answer</text>' +
-                '<rect x="380" y="84" width="160" height="5" rx="2.5" fill="#E2E8F0"/><rect x="380" y="94" width="190" height="5" rx="2.5" fill="#E2E8F0"/>' +
-                '<rect x="364" y="132" width="240" height="36" rx="8" fill="#FFFFFF" stroke="#007bff" stroke-width="1.5" stroke-dasharray="4 2" opacity="0.95">' +
+                '<rect x="364" y="58" width="240" height="58" rx="10" fill="#FFFFFF" stroke="#93C5FD" stroke-width="1.5"/>' +
+                '<text x="380" y="74" font-size="11" font-weight="700" fill="#334155" font-family="system-ui,sans-serif">Answer</text>' +
+                '<rect x="380" y="80" width="160" height="5" rx="2.5" fill="#E2E8F0"/><rect x="380" y="90" width="190" height="5" rx="2.5" fill="#E2E8F0"/>' +
+                '<rect x="380" y="100" width="140" height="5" rx="2.5" fill="#E2E8F0"/>' +
+                '<rect x="364" y="122" width="240" height="46" rx="8" fill="#FFFFFF" stroke="#007bff" stroke-width="1.5" stroke-dasharray="4 2" opacity="0.95">' +
                 '<animate attributeName="opacity" values="0.85;1;0.85" dur="3s" repeatCount="indefinite"/></rect>' +
-                '<text x="380" y="148" font-size="10" font-weight="700" fill="#007bff" font-family="system-ui,sans-serif">References</text>' +
-                '<circle cx="388" cy="158" r="7" fill="#007bff"/><text x="388" y="161" text-anchor="middle" font-size="8" font-weight="700" fill="#FFFFFF" font-family="system-ui,sans-serif">1</text>' +
-                '<rect x="400" y="153" width="120" height="5" rx="2.5" fill="#BFDBFE"/>' +
-                '<circle cx="388" cy="168" r="7" fill="#007bff" opacity="0.75"/><text x="388" y="171" text-anchor="middle" font-size="8" font-weight="700" fill="#FFFFFF" font-family="system-ui,sans-serif">2</text>' +
-                '<rect x="400" y="163" width="100" height="5" rx="2.5" fill="#BFDBFE"/>' +
+                '<text x="380" y="136" font-size="10" font-weight="700" fill="#007bff" font-family="system-ui,sans-serif">References</text>' +
+                '<circle cx="388" cy="148" r="6" fill="#007bff"/><text x="388" y="151" text-anchor="middle" font-size="8" font-weight="700" fill="#FFFFFF" font-family="system-ui,sans-serif">1</text>' +
+                '<rect x="400" y="144" width="120" height="5" rx="2.5" fill="#BFDBFE"/>' +
+                '<circle cx="388" cy="162" r="6" fill="#007bff" opacity="0.75"/><text x="388" y="165" text-anchor="middle" font-size="8" font-weight="700" fill="#FFFFFF" font-family="system-ui,sans-serif">2</text>' +
+                '<rect x="400" y="158" width="100" height="5" rx="2.5" fill="#BFDBFE"/>' +
                 '<rect x="548" y="8" width="76" height="20" rx="10" fill="#DCFCE7"/>' +
                 '<text x="586" y="22" text-anchor="middle" font-size="10" font-weight="700" fill="#166534" font-family="system-ui,sans-serif">With sources</text>' +
                 '</svg>'
