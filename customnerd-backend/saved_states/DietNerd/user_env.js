@@ -47,6 +47,9 @@ window.env = {
         "query_cleaning": {
             "visible": false
         },
+        "cascade_retrieval": {
+            "visible": true
+        },
         "reference_section": {
             "visible": true
         }

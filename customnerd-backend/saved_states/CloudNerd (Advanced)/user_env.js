@@ -49,6 +49,9 @@ window.env = {
         },
         "query_cleaning": {
             "visible": true
+        },
+        "cascade_retrieval": {
+            "visible": true
         }
     }
 };
