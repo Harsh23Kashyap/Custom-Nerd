@@ -3,6 +3,7 @@ import os
 import time
 import logging
 from typing import Any, Dict, Optional
+from benchmarking.telemetry import record_llm_call
 
 api_key = os.getenv('OPENAI_API_KEY')
 if not api_key:
@@ -13,6 +14,31 @@ else:
 
 MAX_RETRIES = 3            # network / rate-limit retries
 BACKOFF_SECS = 2           # exponential back-off base
+OPENAI_PROVIDER = "openai"
+
+
+def _create_chat_completion(*, stage: str, **kwargs):
+    """Create chat completion and record usage telemetry."""
+    response = client.chat.completions.create(**kwargs)
+    prompt_text = ""
+    completion_text = ""
+    try:
+        prompt_text = "\n".join((m.get("content") or "") for m in kwargs.get("messages", []) if isinstance(m, dict))
+    except Exception:
+        prompt_text = ""
+    try:
+        completion_text = response.choices[0].message.content or ""
+    except Exception:
+        completion_text = ""
+    record_llm_call(
+        provider=OPENAI_PROVIDER,
+        model=kwargs.get("model", "unknown"),
+        usage=getattr(response, "usage", None),
+        stage=stage,
+        prompt_text=prompt_text,
+        completion_text=completion_text,
+    )
+    return response
 
 def reinitialize_openai_client():
     global client
@@ -43,6 +69,14 @@ def _retryable_openai_call(*, messages, temperature=0.3, top_p=1.0,
                 top_p=top_p,
                 response_format=response_format,
             )
+            record_llm_call(
+                provider=OPENAI_PROVIDER,
+                model="gpt-4-turbo",
+                usage=getattr(resp, "usage", None),
+                stage="_retryable_openai_call",
+                prompt_text="\n".join((m.get("content") or "") for m in messages if isinstance(m, dict)),
+                completion_text=(resp.choices[0].message.content or ""),
+            )
             return resp.choices[0].message.content or ""
         except (RateLimitError, APITimeoutError, APIConnectionError) as e:
             logging.warning(f"[OpenAI attempt {attempt+1}/{MAX_RETRIES}] {e}")
@@ -59,7 +93,8 @@ def determine_question_validity_openai(query, DETERMINE_QUESTION_VALIDITY_PROMPT
     if not client:
         raise ValueError("OpenAI client not initialized. Please check your OPENAI_API_KEY in the environment variables.")
     
-    valid_question_response = client.chat.completions.create(
+    valid_question_response = _create_chat_completion(
+        stage="determine_question_validity",
         model="gpt-4-turbo",
         messages=[
             {"role": "system", "content": DETERMINE_QUESTION_VALIDITY_PROMPT},
@@ -79,7 +114,8 @@ def query_generation_openai(query, GENERAL_QUERY_PROMPT, QUERY_CONTENTION_PROMPT
         raise ValueError("OpenAI client not initialized. Please check your OPENAI_API_KEY in the environment variables.")
 
     #### GENERAL QUERY
-    general_query_response = client.chat.completions.create(
+    general_query_response = _create_chat_completion(
+        stage="query_generation_general",
         model="gpt-4-turbo",
         messages=[
             {"role": "system", "content": GENERAL_QUERY_PROMPT},
@@ -93,7 +129,8 @@ def query_generation_openai(query, GENERAL_QUERY_PROMPT, QUERY_CONTENTION_PROMPT
     
     if QUERY_CONTENTION_ENABLED:
         #### POINTS OF CONTENTION QUERIES
-        poc_response = client.chat.completions.create(
+        poc_response = _create_chat_completion(
+            stage="query_generation_contention",
             model="gpt-4-turbo",
             messages=[
                 {"role": "system", "content": QUERY_CONTENTION_PROMPT},
@@ -117,7 +154,8 @@ def get_article_type_openai(abstract, ARTICLE_TYPE_PROMPT):
     if not client:
         raise ValueError("OpenAI client not initialized. Please check your OPENAI_API_KEY in the environment variables.")
     
-    article_type_response = client.chat.completions.create(
+    article_type_response = _create_chat_completion(
+        stage="get_article_type",
         model="gpt-4-turbo",
         messages=[
             {"role": "system", "content": ARTICLE_TYPE_PROMPT},
@@ -150,7 +188,8 @@ def generate_content_from_pdf_openai(pdf_text, content_type="abstract", publicat
         raise ValueError("Invalid content_type. Choose 'abstract' or 'summary'.")
 
     # Make OpenAI API call
-    response = client.chat.completions.create(
+    response = _create_chat_completion(
+        stage=f"generate_content_from_pdf_{content_type}",
         model="gpt-4-turbo",
         messages=[
             {"role": "system", "content": prompt},
@@ -171,7 +210,8 @@ def section_match_openai(list_of_strings, RELEVANT_SECTIONS_PROMPT):
     
     list_of_strings_str = ', '.join(list_of_strings)
 
-    relevant_sections_response = client.chat.completions.create(
+    relevant_sections_response = _create_chat_completion(
+        stage="section_match",
         model="gpt-3.5-turbo-0125",
         messages=[
             {
@@ -204,7 +244,8 @@ def generate_final_response_openai(all_relevant_articles, query, FINAL_RESPONSE_
     """
 
     # Generate response from OpenAI API
-    output_response = client.chat.completions.create(
+    output_response = _create_chat_completion(
+        stage="generate_final_response",
         model="gpt-4-turbo",
         messages=[
             {"role": "system", "content": FINAL_RESPONSE_PROMPT},
@@ -237,7 +278,8 @@ def generate_code_from_content_openai(article_content, type, system_prompt_funct
         else:
             system_prompt = system_prompt_function_generator_list_search
         
-        response = client.chat.completions.create(
+        response = _create_chat_completion(
+            stage=f"generate_code_from_content_{type}",
             model="gpt-4-turbo",
             messages=[
                 {
@@ -343,7 +385,8 @@ Return ONLY the JSON described in the system instructions.
 """
 
     # single-call self-revision approach; low temperature for repeatability
-    response = client.chat.completions.create(
+    response = _create_chat_completion(
+        stage=f"generate_prompt_from_content_{prompt_type}",
         model="gpt-4-turbo",
         messages=[
             {"role": "system", "content": system_prompt},

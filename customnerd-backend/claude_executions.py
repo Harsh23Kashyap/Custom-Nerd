@@ -4,6 +4,7 @@ import logging
 import json
 import re
 from typing import Any, Dict, Optional
+from benchmarking.telemetry import record_llm_call
 
 from anthropic import (
     Anthropic,
@@ -25,6 +26,7 @@ DEFAULT_MODEL = "claude-sonnet-4-5-20250929"
 MAX_RETRIES = 3
 BACKOFF_SECS = 2
 DEFAULT_MAX_TOKENS = 8192
+CLAUDE_PROVIDER = "anthropic"
 
 
 def reinitialize_claude_client():
@@ -64,6 +66,14 @@ def _retryable_claude_call(
                 system=system if system else None,
                 messages=messages,
                 temperature=temperature,
+            )
+            record_llm_call(
+                provider=CLAUDE_PROVIDER,
+                model=DEFAULT_MODEL,
+                usage=getattr(response, "usage", None),
+                stage="claude_retryable_call",
+                prompt_text=f"{system or ''}\n{user or ''}",
+                completion_text=(response.content[0].text or "") if response.content else "",
             )
             if response.content and len(response.content) > 0:
                 return (response.content[0].text or "").strip()

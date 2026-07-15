@@ -3,6 +3,7 @@ import time
 import logging
 from typing import Any, Dict, Optional
 from google import genai
+from benchmarking.telemetry import record_llm_call
 
 api_key = os.getenv('GEMINI_API_KEY')
 if not api_key:
@@ -13,6 +14,25 @@ else:
 
 MAX_RETRIES = 3            # network / rate-limit retries
 BACKOFF_SECS = 2           # exponential back-off base
+GEMINI_MODEL = "gemini-2.5-flash"
+GEMINI_PROVIDER = "gemini"
+
+
+def _gemini_generate_content(*, prompt: str, stage: str):
+    response = client.models.generate_content(
+        model=GEMINI_MODEL,
+        contents=prompt,
+    )
+    usage = getattr(response, "usage_metadata", None)
+    record_llm_call(
+        provider=GEMINI_PROVIDER,
+        model=GEMINI_MODEL,
+        usage=usage,
+        stage=stage,
+        prompt_text=prompt,
+        completion_text=getattr(response, "text", "") or "",
+    )
+    return response
 
 def reinitialize_gemini_client():
     global client
@@ -35,10 +55,7 @@ def _retryable_gemini_call(*, prompt, temperature=0.3) -> str:
     
     for attempt in range(MAX_RETRIES):
         try:
-            response = client.models.generate_content(
-                model="gemini-2.5-flash",
-                contents=prompt
-            )
+            response = _gemini_generate_content(prompt=prompt, stage="gemini_retryable_call")
             return response.text or ""
         except Exception as e:
             logging.warning(f"[Gemini attempt {attempt+1}/{MAX_RETRIES}] {e}")
@@ -54,10 +71,7 @@ def determine_question_validity_gemini(query, DETERMINE_QUESTION_VALIDITY_PROMPT
     
     prompt = f"{DETERMINE_QUESTION_VALIDITY_PROMPT}\n\nUser Question: {query}"
     
-    response = client.models.generate_content(
-        model="gemini-2.5-flash",
-        contents=prompt
-    )
+    response = _gemini_generate_content(prompt=prompt, stage="determine_question_validity")
     return response.text
 
 def query_generation_gemini(query, GENERAL_QUERY_PROMPT, QUERY_CONTENTION_PROMPT, QUERY_CONTENTION_ENABLED):
@@ -70,20 +84,14 @@ def query_generation_gemini(query, GENERAL_QUERY_PROMPT, QUERY_CONTENTION_PROMPT
     #### GENERAL QUERY
     general_prompt = f"{GENERAL_QUERY_PROMPT}\n\nUser Question: {query}"
     
-    general_query_response = client.models.generate_content(
-        model="gemini-2.5-flash",
-        contents=general_prompt
-    )
+    general_query_response = _gemini_generate_content(prompt=general_prompt, stage="query_generation_general")
     general_query = general_query_response.text
     
     if QUERY_CONTENTION_ENABLED:
         #### POINTS OF CONTENTION QUERIES
         contention_prompt = f"{QUERY_CONTENTION_PROMPT}\n\nUser Question: {query}"
         
-        poc_response = client.models.generate_content(
-            model="gemini-2.5-flash",
-            contents=contention_prompt
-        )
+        poc_response = _gemini_generate_content(prompt=contention_prompt, stage="query_generation_contention")
         query_contention = poc_response.text
         return general_query, query_contention
     else:
@@ -100,10 +108,7 @@ def get_article_type_gemini(abstract, ARTICLE_TYPE_PROMPT):
     
     prompt = f"{ARTICLE_TYPE_PROMPT}\n\nAbstract: {abstract}"
     
-    response = client.models.generate_content(
-        model="gemini-2.5-flash",
-        contents=prompt
-    )
+    response = _gemini_generate_content(prompt=prompt, stage="get_article_type")
     article_type = response.text.strip().lower()
     return article_type
 
@@ -128,10 +133,7 @@ def generate_content_from_pdf_gemini(pdf_text, content_type="abstract", publicat
 
     full_prompt = f"{prompt}\n\nPaper: {pdf_text}"
     
-    response = client.models.generate_content(
-        model="gemini-2.5-flash",
-        contents=full_prompt
-    )
+    response = _gemini_generate_content(prompt=full_prompt, stage=f"generate_content_from_pdf_{content_type}")
     return response.text.strip()
 
 def section_match_gemini(list_of_strings, RELEVANT_SECTIONS_PROMPT):
@@ -144,10 +146,7 @@ def section_match_gemini(list_of_strings, RELEVANT_SECTIONS_PROMPT):
     list_of_strings_str = ', '.join(list_of_strings)
     prompt = f"{RELEVANT_SECTIONS_PROMPT}\n\nSections: {list_of_strings_str}"
 
-    response = client.models.generate_content(
-        model="gemini-2.5-flash",
-        contents=prompt
-    )
+    response = _gemini_generate_content(prompt=prompt, stage="section_match")
     relevant_sections = response.text
     return relevant_sections
 
@@ -166,10 +165,7 @@ def generate_final_response_gemini(all_relevant_articles, query, FINAL_RESPONSE_
     
     full_prompt = f"{FINAL_RESPONSE_PROMPT}\n\n{human_prompt_response}"
     
-    response = client.models.generate_content(
-        model="gemini-2.5-flash",
-        contents=full_prompt
-    )
+    response = _gemini_generate_content(prompt=full_prompt, stage="generate_final_response")
     output = response.text
     final_output = f"{output}\n\n{DISCLAIMER_TEXT}"
     
@@ -194,10 +190,7 @@ def generate_code_from_content_gemini(article_content, type, system_prompt_funct
         
         prompt = f"{system_prompt}\n\nCode/: {article_content}"
         
-        response = client.models.generate_content(
-            model="gemini-2.5-flash",
-            contents=prompt
-        )
+        response = _gemini_generate_content(prompt=prompt, stage=f"generate_code_from_content_{type}")
         return response.text
     except Exception as e:
         print(f"Error generating summary: {e}")
@@ -289,14 +282,7 @@ Generate the JSON output exactly as specified.
         full_input = f"{system_instruction}\n\n{user_content}"
 
         # Gemini API call
-        response = client.models.generate_content(
-            model="gemini-2.5-flash",
-            contents=full_input,
-            # generation_config={
-            #     "temperature": 0.2,
-            #     "top_p": 0.95,
-            # }
-        )
+        response = _gemini_generate_content(prompt=full_input, stage=f"generate_prompt_from_content_{prompt_type}")
 
         raw = response.text.strip()
         if not raw:

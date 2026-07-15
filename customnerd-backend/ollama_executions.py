@@ -5,9 +5,11 @@ import logging
 import json
 import re
 from typing import Dict, Optional
+from benchmarking.telemetry import record_llm_call
 
 MAX_RETRIES = 3
 BACKOFF_SECS = 2
+OLLAMA_PROVIDER = "ollama"
 
 
 def _get_ollama_model() -> str:
@@ -49,7 +51,7 @@ def reinitialize_ollama_client():
         print("Warning: Ollama client could not be initialized")
 
 
-def _safe_create(**kwargs):
+def _safe_create(stage: str = "ollama_call", **kwargs):
     """
     Thin wrapper around client.chat.completions.create that converts common
     Ollama errors into actionable ValueError messages instead of raw 500s.
@@ -60,7 +62,26 @@ def _safe_create(**kwargs):
             "OLLAMA_BASE_URL is correct in the environment configuration."
         )
     try:
-        return client.chat.completions.create(**kwargs)
+        response = client.chat.completions.create(**kwargs)
+        prompt_text = ""
+        try:
+            prompt_text = "\n".join((m.get("content") or "") for m in kwargs.get("messages", []) if isinstance(m, dict))
+        except Exception:
+            prompt_text = ""
+        completion_text = ""
+        try:
+            completion_text = response.choices[0].message.content or ""
+        except Exception:
+            completion_text = ""
+        record_llm_call(
+            provider=OLLAMA_PROVIDER,
+            model=kwargs.get("model", _get_ollama_model()),
+            usage=getattr(response, "usage", None),
+            stage=stage,
+            prompt_text=prompt_text,
+            completion_text=completion_text,
+        )
+        return response
     except NotFoundError:
         model = kwargs.get('model', _get_ollama_model())
         raise ValueError(
@@ -93,7 +114,7 @@ def _retryable_ollama_call(*, messages, temperature=0.3, top_p=1.0,
 
     for attempt in range(MAX_RETRIES):
         try:
-            resp = client.chat.completions.create(**kwargs)
+            resp = _safe_create(stage="ollama_retryable_call", **kwargs)
             return resp.choices[0].message.content or ""
         except (RateLimitError, APITimeoutError, APIConnectionError) as e:
             logging.warning(f"[Ollama attempt {attempt+1}/{MAX_RETRIES}] {e}")
@@ -107,6 +128,7 @@ def _retryable_ollama_call(*, messages, temperature=0.3, top_p=1.0,
 def determine_question_validity_ollama(query, DETERMINE_QUESTION_VALIDITY_PROMPT):
     """Ollama implementation for determining question validity."""
     resp = _safe_create(
+        stage="determine_question_validity",
         model=_get_ollama_model(),
         messages=[
             {"role": "system", "content": DETERMINE_QUESTION_VALIDITY_PROMPT},
@@ -123,6 +145,7 @@ def query_generation_ollama(query, GENERAL_QUERY_PROMPT, QUERY_CONTENTION_PROMPT
     model = _get_ollama_model()
 
     general_query_response = _safe_create(
+        stage="query_generation_general",
         model=model,
         messages=[
             {"role": "system", "content": GENERAL_QUERY_PROMPT},
@@ -135,6 +158,7 @@ def query_generation_ollama(query, GENERAL_QUERY_PROMPT, QUERY_CONTENTION_PROMPT
 
     if QUERY_CONTENTION_ENABLED:
         poc_response = _safe_create(
+            stage="query_generation_contention",
             model=model,
             messages=[
                 {"role": "system", "content": QUERY_CONTENTION_PROMPT},
@@ -152,6 +176,7 @@ def query_generation_ollama(query, GENERAL_QUERY_PROMPT, QUERY_CONTENTION_PROMPT
 def get_article_type_ollama(abstract, ARTICLE_TYPE_PROMPT):
     """Ollama implementation for determining article type."""
     resp = _safe_create(
+        stage="get_article_type",
         model=_get_ollama_model(),
         messages=[
             {"role": "system", "content": ARTICLE_TYPE_PROMPT},
@@ -175,6 +200,7 @@ def generate_content_from_pdf_ollama(pdf_text, content_type="abstract", publicat
         raise ValueError("Invalid content_type. Choose 'abstract' or 'summary'.")
 
     resp = _safe_create(
+        stage=f"generate_content_from_pdf_{content_type}",
         model=_get_ollama_model(),
         messages=[
             {"role": "system", "content": prompt},
@@ -190,6 +216,7 @@ def section_match_ollama(list_of_strings, RELEVANT_SECTIONS_PROMPT):
     """Ollama implementation for section matching."""
     list_of_strings_str = ', '.join(list_of_strings)
     resp = _safe_create(
+        stage="section_match",
         model=_get_ollama_model(),
         messages=[
             {"role": "system", "content": RELEVANT_SECTIONS_PROMPT},
@@ -209,6 +236,7 @@ def generate_final_response_ollama(all_relevant_articles, query, FINAL_RESPONSE_
     """
 
     resp = _safe_create(
+        stage="generate_final_response",
         model=_get_ollama_model(),
         messages=[
             {"role": "system", "content": FINAL_RESPONSE_PROMPT},
@@ -235,6 +263,7 @@ def generate_code_from_content_ollama(article_content, type,
             system_prompt = system_prompt_function_generator_list_search
 
         resp = _safe_create(
+            stage=f"generate_code_from_content_{type}",
             model=_get_ollama_model(),
             messages=[
                 {"role": "system", "content": system_prompt},
@@ -317,6 +346,7 @@ Return ONLY the JSON described in the system instructions.
 """
 
     resp = _safe_create(
+        stage=f"generate_prompt_from_content_{prompt_type}",
         model=_get_ollama_model(),
         messages=[
             {"role": "system", "content": system_prompt},
