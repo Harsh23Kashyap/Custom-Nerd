@@ -82,6 +82,7 @@ from ollama_executions import (
     generate_content_from_pdf_ollama, section_match_ollama, generate_final_response_ollama,
     generate_code_from_content_ollama, generate_prompt_from_content_ollama, _retryable_ollama_call
 )
+from benchmarking.telemetry import lifecycle_scope, set_request_context
 
 def get_llm_client():
     from dotenv import load_dotenv
@@ -588,7 +589,7 @@ def organize_database_articles(article: Any, user_query: str) -> Dict[str, Any]:
     return article_data
 
 #@title concurrent_organize_database_articles
-def concurrent_organize_database_articles(articles, user_query):
+def concurrent_organize_database_articles(articles, user_query, request_id: Optional[str] = None):
     """
     Concurrently processes and classifies articles using multiple threads for improved performance.
     Uses ThreadPoolExecutor to parallelize the classification of articles into relevant and irrelevant categories.
@@ -602,8 +603,13 @@ def concurrent_organize_database_articles(articles, user_query):
     """
     all_articles = []
 
+    def _organize_worker(article):
+        if request_id:
+            set_request_context(request_id)
+        return organize_database_articles(article, user_query)
+
     with ThreadPoolExecutor(max_workers=8) as executor:
-        futures = [executor.submit(organize_database_articles, article, user_query) for article in articles]
+        futures = [executor.submit(_organize_worker, article) for article in articles]
         for future in as_completed(futures):
             try:
                 article = future.result()
@@ -866,7 +872,7 @@ def relevance_classifier(article: Dict[str, Any], user_query: str) -> tuple[str,
     return article_id, article_is_relevant, article
 
 #@title concurrent_relevance_classification
-def concurrent_relevance_classification(articles, user_query):
+def concurrent_relevance_classification(articles, user_query, request_id: Optional[str] = None):
   """
   Concurrent classification of articles as relevant or irrelevant using the relevance_classifier function.
 
@@ -880,8 +886,13 @@ def concurrent_relevance_classification(articles, user_query):
   relevant_articles = []
   irrelevant_articles = []
   print("Arctile classification")
+  def _relevance_worker(article_tmp):
+        if request_id:
+            set_request_context(request_id)
+        return relevance_classifier(article_tmp, user_query)
+
   with ThreadPoolExecutor(max_workers=8) as executor:
-        futures = [executor.submit(relevance_classifier, article_tmp, user_query) for article_tmp in articles]
+        futures = [executor.submit(_relevance_worker, article_tmp) for article_tmp in articles]
         for future in as_completed(futures):
             try:
                 result = future.result()
@@ -2538,52 +2549,53 @@ def rerank_tiered_articles(
     *,
     top_k: Optional[int] = None,
 ) -> list:
-    if not articles:
-        return []
-    cfg = get_retrieval_profile()
-    top_k = top_k or cfg.get("rerank_top_k", 30)
-    quota_ratio = cfg.get("p1_quota", 0.6)
-
-    p1 = [a for a in articles if isinstance(a, dict) and a.get("retrieval_plane") == "P1"]
-    other = [a for a in articles if a not in p1]
-    p1_slots = max(1, int(top_k * quota_ratio)) if p1 else 0
-    other_slots = top_k - p1_slots
-
-    def rank_pool(pool: list) -> list:
-        if not pool:
+    with lifecycle_scope("Reranking"):
+        if not articles:
             return []
-        texts = [_article_text_for_rank(a) for a in pool]
-        if not any(t.strip() for t in texts):
-            return pool
-        try:
-            vec = TfidfVectorizer(stop_words="english", max_features=5000)
-            mat = vec.fit_transform(texts + [query_text])
-            sims = cosine_similarity(mat[-1], mat[:-1]).flatten()
-            ranked = sorted(zip(pool, sims), key=lambda x: x[1], reverse=True)
-            return [a for a, _ in ranked]
-        except Exception:
-            return pool
+        cfg = get_retrieval_profile()
+        top_k = top_k or cfg.get("rerank_top_k", 30)
+        quota_ratio = cfg.get("p1_quota", 0.6)
 
-    ranked_p1 = rank_pool(p1)[:p1_slots]
-    ranked_other = rank_pool(other)[:other_slots]
-    combined = ranked_p1 + ranked_other
-    seen_keys = set()
-    deduped: list = []
-    for art in combined:
-        key = get_article_dedupe_key(art)
-        if key in seen_keys:
-            continue
-        seen_keys.add(key)
-        deduped.append(art)
-    if len(deduped) < len(articles):
-        for art in rank_pool(articles):
+        p1 = [a for a in articles if isinstance(a, dict) and a.get("retrieval_plane") == "P1"]
+        other = [a for a in articles if a not in p1]
+        p1_slots = max(1, int(top_k * quota_ratio)) if p1 else 0
+        other_slots = top_k - p1_slots
+
+        def rank_pool(pool: list) -> list:
+            if not pool:
+                return []
+            texts = [_article_text_for_rank(a) for a in pool]
+            if not any(t.strip() for t in texts):
+                return pool
+            try:
+                vec = TfidfVectorizer(stop_words="english", max_features=5000)
+                mat = vec.fit_transform(texts + [query_text])
+                sims = cosine_similarity(mat[-1], mat[:-1]).flatten()
+                ranked = sorted(zip(pool, sims), key=lambda x: x[1], reverse=True)
+                return [a for a, _ in ranked]
+            except Exception:
+                return pool
+
+        ranked_p1 = rank_pool(p1)[:p1_slots]
+        ranked_other = rank_pool(other)[:other_slots]
+        combined = ranked_p1 + ranked_other
+        seen_keys = set()
+        deduped: list = []
+        for art in combined:
             key = get_article_dedupe_key(art)
-            if key not in seen_keys:
-                seen_keys.add(key)
-                deduped.append(art)
-            if len(deduped) >= top_k:
-                break
-    return deduped[:top_k]
+            if key in seen_keys:
+                continue
+            seen_keys.add(key)
+            deduped.append(art)
+        if len(deduped) < len(articles):
+            for art in rank_pool(articles):
+                key = get_article_dedupe_key(art)
+                if key not in seen_keys:
+                    seen_keys.add(key)
+                    deduped.append(art)
+                if len(deduped) >= top_k:
+                    break
+        return deduped[:top_k]
 
 
 def _confidence_from_best_plane(best_plane: Optional[str], gate_confidence: str) -> str:
