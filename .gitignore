@@ -32,3 +32,11 @@ customnerd-backend/saved_states/*/historical_answer.json
 .env
 customnerd-backend/saved_states/CloudNerd/variables.env
 *.env
+
+# Runtime state (regenerated on every /load_state and /process_detailed_combined_query)
+customnerd-backend/.active_nerd_state
+customnerd-backend/user_env.js
+
+# Local agent tooling
+.claude/
+AGENTS.md
