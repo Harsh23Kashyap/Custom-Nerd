@@ -288,10 +288,12 @@ Accepts `{ provider, api_key }` (or no `api_key` for Ollama connection test) and
 1) Python and dependencies
 - Use Python 3.9+ and install dependencies:
 ```bash
-python -m venv venv
-source venv/bin/activate
+python -m venv nerd_engine_venv
+source nerd_engine_venv/bin/activate
 pip install -r requirements.txt
 ```
+
+> Note: a legacy `venv/` directory may also be present from earlier installations — `run.py` and `setup.py` both target `nerd_engine_venv/`. The canonical runtime environment is `nerd_engine_venv/`.
 
 2) Environment configuration
 - Create or edit `variables.env` next to `main.py`. At minimum set:

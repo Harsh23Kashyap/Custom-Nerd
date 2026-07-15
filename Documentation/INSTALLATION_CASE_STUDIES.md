@@ -575,8 +575,8 @@ uvicorn main:app --port 8001
 
 1. **Dependency Updates**
    ```bash
-   # Activate virtual environment
-   source venv/bin/activate
+   # Activate virtual environment (canonical: nerd_engine_venv)
+   source nerd_engine_venv/bin/activate
    
    # Update packages
    pip list --outdated

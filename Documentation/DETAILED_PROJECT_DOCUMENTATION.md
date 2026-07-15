@@ -93,7 +93,7 @@ customnerd/
 │   ├── user_list_search.py     # ID-based search implementations
 │   ├── generic_prompts.py      # AI code generation prompts
 │   ├── variables.env           # API keys and environment variables
-│   ├── venv/                   # Python virtual environment
+│   ├── nerd_engine_venv/      # Python virtual environment (canonical runtime)
 │   ├── saved_states/           # Configuration state management
 │   │   ├── DietNerd/          # Diet-specific configurations
 │   │   └── NewsNerd/          # News-specific configurations
@@ -215,7 +215,7 @@ customnerd/
 
 ### Complete Query Processing Pipeline
 
-The Custom-Nerd/Nerd-Engine system follows a sophisticated 10-stage processing pipeline with optional query cleaning:
+The Custom-Nerd/Nerd-Engine system follows a 7-stage processing pipeline with optional query cleaning. The canonical stage list is `LIFECYCLE_ORDER` in `customnerd-backend/benchmarking/telemetry.py`. Of the 7, 5 are wrapped in `main.py` (`Question Start` and `Question End` are bracket-only stages).
 
 ```mermaid
 sequenceDiagram

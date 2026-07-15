@@ -12,7 +12,8 @@ Custom-Nerd/Nerd-Engine is a modular, configurable academic research assistant t
    - AI-assisted code generation for extensibility
 
 2. **Real-Time Processing Pipeline**
-   - 9-stage processing workflow with live progress updates
+   - 7-stage processing workflow with live progress updates (canonical, per `LIFECYCLE_ORDER` in `customnerd-backend/benchmarking/telemetry.py`)
+   - Stages: Question Start → Query Generation → Query Cleaning → Retrieval → Reranking → Final Answer → Question End
    - Server-Sent Events (SSE) for non-blocking user experience
    - Concurrent processing for performance optimization
 

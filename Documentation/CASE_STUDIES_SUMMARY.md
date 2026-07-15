@@ -12,7 +12,7 @@ Custom-Nerd/Nerd-Engine successfully demonstrates its capabilities as a **generi
 - **One Codebase**: All implementations use identical core processing engine
 - **Configuration-Driven**: All customization achieved through config files, no code changes
 - **Rapid Deployment**: New domains can be configured and deployed in hours
-- **Consistent Quality**: Proven 9-stage processing pipeline across all implementations
+- **Consistent Quality**: Proven 7-stage processing pipeline across all implementations (canonical per `LIFECYCLE_ORDER`)
 
 ### 🔄 **Proven Adaptation Patterns**
 1. **Academic Research Pattern** (DietNerd): Full-featured, peer-reviewed focus with comprehensive citations
