@@ -6,6 +6,7 @@ from starlette.responses import JSONResponse
 import asyncio
 from sse_starlette.sse import EventSourceResponse
 from concurrent.futures import ThreadPoolExecutor
+import importlib
 import math
 import uuid
 import json
@@ -24,12 +25,23 @@ import json5
 import logging
 import os
 import shutil
+from benchmarking.telemetry import (
+    add_stage_runtime,
+    begin_request,
+    clear_request_context,
+    finalize_request,
+    lifecycle_scope,
+    set_request_context,
+    set_retrieval_mode,
+)
 
 #Sim search
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.metrics.pairwise import cosine_similarity
 
 from collections import defaultdict
+# Function-scoped `from openai_prompts import …` re-reads after reload;
+# direct `main.X` references don't, so prefer the function-scoped form.
 from openai_prompts import *
 
 logging.basicConfig(level=logging.INFO)
@@ -392,19 +404,37 @@ async def sse(session_id: str = Query(default=None)):
         raise HTTPException(status_code=400, detail="session_id is required")
     return EventSourceResponse(event_generator(session_id))
 
+# Clamp to >= 1: timeout=0 makes the stream unusable.
+_SSE_IDLE_TIMEOUT_RAW = int(os.environ.get("SSE_IDLE_TIMEOUT_SECONDS", "180"))
+SSE_IDLE_TIMEOUT_SECONDS = max(1, _SSE_IDLE_TIMEOUT_RAW)
+
 async def event_generator(session_id: str):
     queue = asyncio.Queue()
     update_queues[session_id] = queue
+    idle_keepalives = 0
     try:
         while True:
-            data = await queue.get()
+            try:
+                data = await asyncio.wait_for(queue.get(), timeout=SSE_IDLE_TIMEOUT_SECONDS)
+            except asyncio.TimeoutError:
+                # Long-running pipeline steps (relevance classification, final
+                # answer generation) can leave the queue silent for minutes.
+                # Yielding an SSE comment keeps the connection alive without
+                # breaking the stream. EventSource ignores comments per spec.
+                idle_keepalives += 1
+                logging.info(
+                    f"SSE keepalive #{idle_keepalives} for session {session_id} "
+                    f"after {SSE_IDLE_TIMEOUT_SECONDS}s of inactivity"
+                )
+                yield {"comment": "keepalive"}
+                continue
             if isinstance(data, dict) and "final_output" in data:
                 yield {"event": "message", "data": json.dumps(data)}
                 break
             else:
                 yield {"event": "message", "data": json.dumps({"update": data})}
     finally:
-        del update_queues[session_id]
+        update_queues.pop(session_id, None)
 
 # Define the request model
 class DetailedCombinedQueryRequest(BaseModel):
@@ -425,6 +455,8 @@ async def process_detailed_combined_query(
     search_pmid: bool = Form(...),
     pmids: Optional[str] = Form(None),  # Optional, sent as a string (which we'll parse)
     search_pdf: bool = Form(...),
+    question_id: Optional[str] = Form(None),
+    benchmark_mode: bool = Form(False),
     files: List[UploadFile] = File(None)  # Handle files
 ):
     input_text = user_query
@@ -464,12 +496,29 @@ async def process_detailed_combined_query(
         parsed_ids,
         search_doc,
         file_metadata_list,
-        unique_id
+        unique_id,
+        question_id,
+        benchmark_mode,
     )
 
     return JSONResponse({"session_id": unique_id})
 
-def process_detailed_combined_logic(input_text, search_db, search_id, id_list, search_doc, file_metadata_list: List[dict], unique_id):
+def process_detailed_combined_logic(
+    input_text,
+    search_db,
+    search_id,
+    id_list,
+    search_doc,
+    file_metadata_list: List[dict],
+    unique_id,
+    question_id: Optional[str] = None,
+    benchmark_mode: bool = False,
+):
+    benchmark_enabled = bool(benchmark_mode)
+    if benchmark_enabled:
+        begin_request(unique_id, question_id=question_id, retrieval_mode=None)
+        set_request_context(unique_id)
+        add_stage_runtime("Question Start", 0.0, request_id=unique_id)
     sync_send_update(unique_id, "Creating a procedure...")
     id_set = set()
     start_time = time.time()  # Start runtime tracking
@@ -481,7 +530,8 @@ def process_detailed_combined_logic(input_text, search_db, search_id, id_list, s
     if search_db:
         print("Searching Article Database...")
         sync_send_update(unique_id, "Generating Search Queries...")
-        _, _, query_list = query_generation(input_text)
+        with lifecycle_scope("Query Generation", request_id=unique_id if benchmark_enabled else None):
+            _, _, query_list = query_generation(input_text)
         print("Generated Article Database queries:", query_list)
         try:
             with open('../customnerd-website/user_env.js', 'r', encoding='utf-8') as file:
@@ -502,7 +552,8 @@ def process_detailed_combined_logic(input_text, search_db, search_id, id_list, s
                     if os.path.exists(clean_query_path):
                         try:
                             import clean_query
-                            query_list = clean_query.clean_query(query_list)
+                            with lifecycle_scope("Query Cleaning", request_id=unique_id if benchmark_enabled else None):
+                                query_list = clean_query.clean_query(query_list)
                             print("Refined queries:", query_list)
                         except Exception as import_error:
                             print(f"Error importing or using clean_query module: {import_error}, using original queries")
@@ -516,137 +567,150 @@ def process_detailed_combined_logic(input_text, search_db, search_id, id_list, s
             print(f"Error reading frontend config: {e}, using original queries")
         
         sync_send_update(unique_id, "5 search queries generated. Collecting articles from Article Database...")
-        try:
-            collect_articles_func = globals().get('collect_articles')
-            if collect_articles_func and callable(collect_articles_func):
-                use_cascade = is_cascade_mode()
-                print(f"[retrieval] user cascade toggle={'on' if use_cascade else 'off'}")
-                if use_cascade:
-                    db_articles, retrieval_meta = tiered_collect_articles(
-                        lambda ql: collect_articles_with_curl_fallback(collect_articles_func, ql),
-                        input_text,
-                        query_list,
-                    )
-                    if retrieval_meta.get("error"):
-                        logging.warning(
-                            "Tiered retrieval failed (%s); falling back to legacy collect",
-                            retrieval_meta.get("error"),
+
+    end_api = time.time()
+
+    # One Retrieval scope covers DB + IDs + DB-organize + PDF + URL.
+    with lifecycle_scope("Retrieval", request_id=unique_id if benchmark_enabled else None):
+        if search_db:
+            try:
+                collect_articles_func = globals().get('collect_articles')
+                if collect_articles_func and callable(collect_articles_func):
+                    use_cascade = is_cascade_mode()
+                    print(f"[retrieval] user cascade toggle={'on' if use_cascade else 'off'}")
+                    if benchmark_enabled:
+                        set_retrieval_mode("cascade" if use_cascade else "strict", request_id=unique_id)
+                    if use_cascade:
+                        db_articles, retrieval_meta = tiered_collect_articles(
+                            lambda ql: collect_articles_with_curl_fallback(collect_articles_func, ql),
+                            input_text,
+                            query_list,
                         )
-                        sync_send_update(
-                            unique_id,
-                            "Tiered search unavailable; using standard article search...",
-                        )
-                        db_articles = collect_articles_with_curl_fallback(
-                            collect_articles_func, query_list
-                        )
-                        retrieval_confidence = None
+                        if retrieval_meta.get("error"):
+                            logging.warning(
+                                "Tiered retrieval failed (%s); falling back to legacy collect",
+                                retrieval_meta.get("error"),
+                            )
+                            sync_send_update(
+                                unique_id,
+                                "Tiered search unavailable; using standard article search...",
+                            )
+                            db_articles = collect_articles_with_curl_fallback(
+                                collect_articles_func, query_list
+                            )
+                            retrieval_confidence = None
+                        else:
+                            retrieval_confidence = retrieval_meta.get("retrieval_confidence")
+                            print(
+                                f"[tiered] confidence={retrieval_confidence} "
+                                f"planes={retrieval_meta.get('planes_run')}"
+                            )
                     else:
-                        retrieval_confidence = retrieval_meta.get("retrieval_confidence")
-                        print(
-                            f"[tiered] confidence={retrieval_confidence} "
-                            f"planes={retrieval_meta.get('planes_run')}"
-                        )
+                        db_articles = collect_articles_with_curl_fallback(collect_articles_func, query_list)
                 else:
-                    db_articles = collect_articles_with_curl_fallback(collect_articles_func, query_list)
-            else:
-                raise NameError("collect_articles function is not available")
-        except (NameError, AttributeError) as e:
-            error_msg = f"Error: collect_articles function is not available. Missing module: {missing_modules.get('user_search_apis', {}).get('module_name', 'unknown')}"
-            logging.error(error_msg)
-            sync_send_update(unique_id, f"ERROR: {error_msg}. Please check /check_missing_modules for details.")
-            db_articles = []
-        except Exception as e:
-            error_msg = f"Error collecting articles: {str(e)}"
-            logging.error(error_msg)
-            sync_send_update(unique_id, f"ERROR: {error_msg}")
-            db_articles = []
-        
+                    raise NameError("collect_articles function is not available")
+            except (NameError, AttributeError) as e:
+                error_msg = f"Error: collect_articles function is not available. Missing module: {missing_modules.get('user_search_apis', {}).get('module_name', 'unknown')}"
+                logging.error(error_msg)
+                sync_send_update(unique_id, f"ERROR: {error_msg}. Please check /check_missing_modules for details.")
+                db_articles = []
+            except Exception as e:
+                error_msg = f"Error collecting articles: {str(e)}"
+                logging.error(error_msg)
+                sync_send_update(unique_id, f"ERROR: {error_msg}")
+                db_articles = []
+
         if search_id and id_list and db_articles:
             try:
                 db_articles = [item for item in db_articles if item.get('MedlineCitation', {}).get('PMID') not in id_list]
             except (KeyError, AttributeError):
                 # If structure is different, skip filtering
                 pass
+
+        if search_id and id_list:
+            sync_send_update(unique_id, "Fetching articles by user passed IDs...")
+            try:
+                fetch_articles_func = globals().get('fetch_articles_by_ids') or globals().get(
+                    'fetch_articles_by_pmids'
+                )
+                if fetch_articles_func and callable(fetch_articles_func):
+                    id_articles = run_with_rate_limit_curl_fallback(fetch_articles_func, list(id_list))
+                else:
+                    raise NameError("fetch_articles_by_ids function is not available")
+            except (NameError, AttributeError) as e:
+                error_msg = f"Error: fetch_articles_by_ids function is not available. Missing module: {missing_modules.get('user_list_search', {}).get('module_name', 'unknown')}"
+                logging.error(error_msg)
+                sync_send_update(unique_id, f"ERROR: {error_msg}. Please check /check_missing_modules for details.")
+                id_articles = []
+            except Exception as e:
+                error_msg = f"Error fetching articles by IDs: {str(e)}"
+                logging.error(error_msg)
+                sync_send_update(unique_id, f"ERROR: {error_msg}")
+                id_articles = []
+            else:
+                id_set.update(id_list)
+                sync_send_update(unique_id, f"Fetched {len(id_articles)} articles by user passed IDs...")
+
         print(f"Collected {len(db_articles)} articles from Database.")
         sync_send_update(unique_id, f"Collected {len(db_articles)} articles...")
 
-    end_api = time.time()
+        #Step 2.5: Process Database Articles
+        if db_articles:
+            # Create async wrapper for concurrent function with progress updates
+            async def process_db_articles_with_progress():
+                # Start the processing task
+                processing_task = asyncio.get_running_loop().run_in_executor(
+                    None,
+                    concurrent_organize_database_articles,
+                    db_articles,
+                    input_text,
+                    unique_id if benchmark_enabled else None,
+                )
 
-    # Step 2: Fetch Additional Articles via IDs
-    if search_id and id_list:
-        sync_send_update(unique_id, "Fetching articles by user passed IDs...")
-        try:
-            fetch_articles_func = globals().get('fetch_articles_by_ids') or globals().get(
-                'fetch_articles_by_pmids'
-            )
-            if fetch_articles_func and callable(fetch_articles_func):
-                id_articles = run_with_rate_limit_curl_fallback(fetch_articles_func, list(id_list))
-            else:
-                raise NameError("fetch_articles_by_ids function is not available")
-        except (NameError, AttributeError) as e:
-            error_msg = f"Error: fetch_articles_by_ids function is not available. Missing module: {missing_modules.get('user_list_search', {}).get('module_name', 'unknown')}"
-            logging.error(error_msg)
-            sync_send_update(unique_id, f"ERROR: {error_msg}. Please check /check_missing_modules for details.")
-            id_articles = []
-        except Exception as e:
-            error_msg = f"Error fetching articles by IDs: {str(e)}"
-            logging.error(error_msg)
-            sync_send_update(unique_id, f"ERROR: {error_msg}")
-            id_articles = []
-        else:
-            id_set.update(id_list)
-            sync_send_update(unique_id, f"Fetched {len(id_articles)} articles by user passed IDs...")
+                # Progress messages to send during processing
+                progress_messages = [
+                    "Looking at each article in detail to assess relevance...",
+                    "Analyzing article content and extracting key insights...",
+                    "Categorizing articles and seeing the details..."
+                ]
 
+                # Send progress updates while processing
+                for i, message in enumerate(progress_messages):
+                    if not processing_task.done():
+                        await send_update(unique_id, message)
+                        # Wait 20 seconds between messages
+                        await asyncio.sleep(20)
+                    else:
+                        break
 
+                # Wait for the processing to complete
+                result = await processing_task
+                await send_update(unique_id, "Looking into the articles in depth...")
+                return result
 
-    #Step 2.5: Process Database Articles
-    if db_articles:
-        # Create async wrapper for concurrent function with progress updates
-        async def process_db_articles_with_progress():
-            # Start the processing task
-            processing_task = asyncio.get_running_loop().run_in_executor(
-                None, concurrent_organize_database_articles, db_articles, input_text
-            )
-            
-            # Progress messages to send during processing
-            progress_messages = [
-                "Looking at each article in detail to assess relevance...",
-                "Analyzing article content and extracting key insights...",
-                "Categorizing articles and seeing the details..."
-            ]
-            
-            # Send progress updates while processing
-            for i, message in enumerate(progress_messages):
-                if not processing_task.done():
-                    await send_update(unique_id, message)
-                    # Wait 20 seconds between messages
-                    await asyncio.sleep(20)
-                else:
-                    break
-            
-            # Wait for the processing to complete
-            result = await processing_task
-            await send_update(unique_id, "Looking into the articles in depth...")
-            return result
-        
-        db_articles = _run_coro_sync(process_db_articles_with_progress())
-        print("Database Articles Processed:", db_articles)
+            db_articles = _run_coro_sync(process_db_articles_with_progress())
+            print("Database Articles Processed:", db_articles)
 
 
-    # Step 3: Process Documents (if enabled)¸
-    doc_articles = []
-    if search_doc:
-        doc_articles = process_pdf_articles_parallel(file_metadata_list, unique_id)
-        print("Document Articles Processed:", doc_articles)
+        # Step 3: Process Documents (if enabled)¸
+        doc_articles = []
+        if search_doc:
+            doc_articles = process_pdf_articles_parallel(file_metadata_list, unique_id)
+            print("Document Articles Processed:", doc_articles)
 
-    # Step 3.5: Process Reference Articles
-    db_articles = process_articles_by_url(db_articles)
+        # Step 3.5: Process Reference Articles
+        db_articles = process_articles_by_url(db_articles)
     
 
     # Step 4: Relevance Classification
     start_relevance_time = time.time()
     print("Classifying relevance of articles...")
-    relevant_items, irrelevant_items = concurrent_relevance_classification(db_articles, input_text)
+    with lifecycle_scope("Reranking", request_id=unique_id if benchmark_enabled else None):
+        relevant_items, irrelevant_items = concurrent_relevance_classification(
+            db_articles,
+            input_text,
+            unique_id if benchmark_enabled else None,
+        )
     end_relevance_time = time.time()
     print(f"Classified {len(relevant_items)} relevant, {len(irrelevant_items)} irrelevant articles.")
     relevant_items.extend(id_articles)
@@ -665,11 +729,14 @@ def process_detailed_combined_logic(input_text, search_db, search_id, id_list, s
     # Write all relevant items to a file for debugging/inspection
     print(f"Synthesizing final response for {len(all_relevant_items)} articles...")
     sync_send_update(unique_id, f"Synthesizing final response...")
-    all_relevant_items = trim_relevant_articles_by_token_limit(all_relevant_items, input_text)
-    final_result = generate_final_response(all_relevant_items, input_text, retrieval_confidence)
+    with lifecycle_scope("Reranking", request_id=unique_id if benchmark_enabled else None):
+        all_relevant_items = trim_relevant_articles_by_token_limit(all_relevant_items, input_text)
+    with lifecycle_scope("Final Answer", request_id=unique_id if benchmark_enabled else None):
+        final_result = generate_final_response(all_relevant_items, input_text, retrieval_confidence)
     sync_send_update(unique_id, "Generated final response...")
     print("Passing all relevant items to collect_referenced_articles...")
-    citation_generation = print_referenced_articles(final_result, all_relevant_items)
+    with lifecycle_scope("Final Answer", request_id=unique_id if benchmark_enabled else None):
+        citation_generation = print_referenced_articles(final_result, all_relevant_items)
     print("Citation Generation:", citation_generation)
     # Step 9: Validate Citations Output
     try:
@@ -684,6 +751,17 @@ def process_detailed_combined_logic(input_text, search_db, search_id, id_list, s
             "citations_obj": ["Not Found"],
         }
 
+    if benchmark_enabled:
+        add_stage_runtime("Question End", 0.0, request_id=unique_id)
+        telemetry = finalize_request(unique_id)
+        result_object.update(telemetry)
+        # Backward compatibility for existing eval scripts.
+        result_object["duration_seconds"] = telemetry.get("runtime_seconds", 0.0)
+        result_object["llm_prompt_tokens"] = telemetry.get("input_tokens", 0)
+        result_object["llm_completion_tokens"] = telemetry.get("output_tokens", 0)
+        result_object["llm_total_tokens"] = telemetry.get("total_tokens", 0)
+        result_object["llm_cost_usd_estimate"] = telemetry.get("estimated_cost_usd", 0.0)
+        result_object["llm_calls_count"] = len(telemetry.get("llm_calls", []))
     sync_send_update(unique_id, result_object)
 
     # Append result to historical_answer.json if chat history is enabled in frontend config
@@ -725,6 +803,8 @@ def process_detailed_combined_logic(input_text, search_db, search_id, id_list, s
     except Exception as e:
         print(f"Warning: Could not append to historical_answer.json: {e}")
 
+    if benchmark_enabled:
+        clear_request_context(unique_id)
     return result_object
 
 
@@ -1432,6 +1512,17 @@ def _reload_runtime_env(backend_dir: str) -> None:
         except Exception:
             pass
 
+    # Refresh imports so function-scoped `from openai_prompts import …` and
+    # `from clean_query import …` see the files /load_state just wrote.
+    for module_name in ("openai_prompts", "clean_query"):
+        try:
+            importlib.reload(importlib.import_module(module_name))
+        except Exception as reload_err:
+            logging.warning(
+                f"Could not reload {module_name} after load_state: {reload_err}. "
+                "Subsequent requests may fail until the module is fixed."
+            )
+
 
 @app.post("/load_state")
 async def load_state(state_name: str = Form(...)):
@@ -1442,16 +1533,17 @@ async def load_state(state_name: str = Form(...)):
         state_dir = os.path.join(backend_dir, "saved_states", state_name)
         if not os.path.exists(state_dir):
             raise HTTPException(status_code=404, detail=f"State '{state_name}' not found")
-        
+
         files_to_copy = [
             "customnerd_logo.png",
             "openai_prompts.py",
             "user_env.js",
             "user_list_search.py",
             "user_search_apis.py",
+            "clean_query.py",
             "variables.env"
         ]
-        
+
         for file in files_to_copy:
             source_path = os.path.join(state_dir, file)
             if os.path.exists(source_path):
@@ -1471,6 +1563,9 @@ async def load_state(state_name: str = Form(...)):
                             _merge_variables_env_preserving_secrets(dest_path, source_path)
                         else:
                             shutil.copy2(source_path, dest_path)
+                    elif file == "clean_query.py":
+                        dest_path = os.path.join(backend_dir, file)
+                        shutil.copy2(source_path, dest_path)
                     else:
                         dest_path = os.path.join(backend_dir, file)
                         shutil.copy2(source_path, dest_path)
