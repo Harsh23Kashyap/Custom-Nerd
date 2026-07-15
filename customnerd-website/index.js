@@ -33,66 +33,14 @@ async function check_valid(userQuery) {
 }
 
 
-/**
- * Generates an answer based on the given question.
- *
- * @param {string} question - The question to generate an answer for.
- * @return {Promise<Object>} A Promise that resolves to the generated answer.
- * @throws {Error} If the network response is not ok.
- */
-const generate = async (question) => {
-    try {
-        const queryUrl = `${baseURL}/generate/${encodeURIComponent(question)}`;
-        const response = await fetch(queryUrl, {
-            method: 'GET',
-            headers: {
-                'Accept': 'application/json',
-                'Content-Type': 'application/json',
-            },
-            mode: 'cors'
-        });
-        
-        if (!response.ok) {
-            throw new Error('Network response was not ok');
-        }
-
-        const result = await response.json();
-        return result;
-    } catch (err) {
-        console.error('Fetch error:', err);
-        throw err;
-    }
+// Removed 2026-07 — use processDetailedCombinedQuery() (streams via /sse).
+const generate = async (_question) => {
+    throw new Error('generate() was removed. Use processDetailedCombinedQuery(question).');
 };
 
-/**
- * Retrieves a similarity search result from the server based on the provided question.
- *
- * @param {string} question - The question to be searched.
- * @return {Promise<Object>} A promise that resolves to the similarity search result object.
- * @throws {Error} If the network response is not ok.
- */
-const get_sim = async (question) => {
-    try {
-        const queryUrl = `${baseURL}/db_sim_search/${encodeURIComponent(question)}`;
-        const response = await fetch(queryUrl, {
-            method: 'GET',
-            headers: {
-                'Accept': 'application/json',
-                'Content-Type': 'application/json',
-            },
-            mode: 'cors'
-        });
-        
-        if (!response.ok) {
-            throw new Error('Network response was not ok');
-        }
-
-        const result = await response.json();
-        return result;
-    } catch (err) {
-        console.error('Fetch error:', err);
-        throw err;
-    }
+// Removed 2026-07 — use getSimilarQuestions().
+const get_sim = async (_question) => {
+    throw new Error('get_sim() was removed. Use getSimilarQuestions(question).');
 };
 
 /**
