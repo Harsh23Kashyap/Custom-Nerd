@@ -120,12 +120,14 @@ Custom-Nerd/Nerd-Engine is a modular, configuration-driven research assistant en
 
 Comprehensive documentation for Custom-Nerd/Nerd-Engine is available in the following files:
 
-- [Architecture Summary](Documentation/ARCHITECTURE_SUMMARY.md) - Overview of the system architecture and design patterns
-- [Case Studies Documentation](Documentation/CASE_STUDIES_DOCUMENTATION.md) - Detailed case studies and implementation examples
-- [Case Studies Quick Reference](Documentation/CASE_STUDIES_QUICK_REFERENCE.md) - Quick reference guide for case studies
-- [Case Studies Summary](Documentation/CASE_STUDIES_SUMMARY.md) - Summary of key case studies and findings
-- [Detailed Project Documentation](Documentation/DETAILED_PROJECT_DOCUMENTATION.md) - Comprehensive project documentation
-- [Installation Case Studies](Documentation/INSTALLATION_CASE_STUDIES.md) - Installation guides and troubleshooting case studies
+- [Architecture Summary](Documentation/architecture/ARCHITECTURE_SUMMARY.md) - Overview of the system architecture and design patterns
+- [Case Studies Documentation](Documentation/case-studies/CASE_STUDIES_DOCUMENTATION.md) - Detailed case studies and implementation examples
+- [Case Studies Quick Reference](Documentation/case-studies/CASE_STUDIES_QUICK_REFERENCE.md) - Quick reference guide for case studies
+- [Case Studies Summary](Documentation/case-studies/CASE_STUDIES_SUMMARY.md) - Summary of key case studies and findings
+- [Detailed Project Documentation](Documentation/architecture/DETAILED_PROJECT_DOCUMENTATION.md) - Comprehensive project documentation
+- [Installation Case Studies](Documentation/installation/INSTALLATION_CASE_STUDIES.md) - Installation guides and troubleshooting case studies
+
+Or browse the [Documentation index](Documentation/README.md).
 
 ### Design Specs
 
