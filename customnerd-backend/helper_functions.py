@@ -5,8 +5,7 @@ from typing import Any, Dict, Optional
 import ssl
 ssl._create_default_https_context = ssl._create_unverified_context
 import os
-# env = 'ATT81274.env'
-env= 'variables.env'
+env = 'variables.env'
 load_dotenv(env)
 
 from generic_prompts import *
