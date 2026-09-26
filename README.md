@@ -1,8 +1,8 @@
-> **Research software — manuscript in progress.** This repository accompanies ongoing academic research at **New York University** under the supervision of **Professor Dennis Shasha** (Department of Computer Science, Courant Institute of Mathematical Sciences). The associated paper is **in progress and has not been submitted** for publication. The work below is a **collaborative research effort** by the full author team listed in this section. If you use, fork, or build on this codebase, please acknowledge all contributors (see [How to cite](#how-to-cite-this-work)).
+> **Research software — published paper.** This repository accompanies collaborative academic research involving **New York University** and the full author team listed below. The associated CustomNerd paper was published in *Electronics* in 2026. The work below is a **collaborative research effort** by the full author team listed in this section. If you use, fork, or build on this codebase, please acknowledge all contributors (see [How to cite](#how-to-cite-this-work)).
 
 ## CustomNerd: A Framework and Tool for Fast Deployment of Production-Ready Expertise-based Question Answering Systems
 
-**Paper status:** In progress (not yet submitted)
+**Paper status:** Published in *Electronics* 2026, **15**(14), 3041. [https://doi.org/10.3390/electronics15143041](https://doi.org/10.3390/electronics15143041)
 
 ### Research team
 
@@ -21,18 +21,22 @@ This repository is maintained collaboratively by the research team below. All me
 
 ### How to cite this work
 
-The manuscript is in preparation (not yet submitted). If you use this repository before publication, please cite or acknowledge the full research team.
+If you use this repository, please cite the published paper and acknowledge the full research team.
 
 ```bibtex
-@unpublished{CustomNerd2026,
-  title  = {CustomNerd: A Framework and Tool for Fast Deployment of Production-Ready Expertise-based Question Answering Systems},
-  author = {Kashyap, Harsh and Wu, Shela and Jiang, Fengcheng and Kim, Euijae and Herman, Elyse and Dickman, Jacob and Agarwal, Daksh and Shasha, Dennis},
-  year   = {2026},
-  note   = {Manuscript in preparation (not yet submitted). New York University. https://github.com/Harsh23Kashyap/customnerd}
+@article{Kashyap2026CustomNerd,
+  title   = {CustomNerd: A Framework and Tool for Fast Deployment of Production-Ready Expertise-Based Question Answering Systems},
+  author  = {Kashyap, Harsh and Wu, Shela and Agarwal, Daksh and Jiang, Fengcheng and Kim, Euijae and Herman, Elyse and Dickman, Jacob and Shasha, Dennis},
+  journal = {Electronics},
+  year    = {2026},
+  volume  = {15},
+  number  = {14},
+  pages   = {3041},
+  doi     = {10.3390/electronics15143041}
 }
 ```
 
-**APA:** Kashyap, H., Wu, S., Jiang, F., Kim, E., Herman, E., Dickman, J., Agarwal, D., & Shasha, D. (2026). *CustomNerd: A framework and tool for fast deployment of production-ready expertise-based question answering systems* [Manuscript in preparation]. New York University. https://github.com/Harsh23Kashyap/customnerd
+**APA:** Kashyap, H., Wu, S., Agarwal, D., Jiang, F., Kim, E., Herman, E., Dickman, J., & Shasha, D. (2026). CustomNerd: A framework and tool for fast deployment of production-ready expertise-based question answering systems. *Electronics, 15*(14), 3041. https://doi.org/10.3390/electronics15143041
 
 ---
 
