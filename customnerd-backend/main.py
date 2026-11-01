@@ -761,6 +761,7 @@ def process_detailed_combined_logic(
         result_object["llm_completion_tokens"] = telemetry.get("output_tokens", 0)
         result_object["llm_total_tokens"] = telemetry.get("total_tokens", 0)
         result_object["llm_cost_usd_estimate"] = telemetry.get("estimated_cost_usd", 0.0)
+        result_object["llm_cost_is_partial"] = bool(telemetry.get("cost_is_partial", False))
         result_object["llm_calls_count"] = len(telemetry.get("llm_calls", []))
     sync_send_update(unique_id, result_object)
 

@@ -140,6 +140,8 @@ def save_results(records: list[dict], output_prefix: str) -> None:
         "llm_completion_tokens",
         "llm_total_tokens",
         "llm_cost_usd_estimate",
+        "cost_is_partial",
+        "unpriced_models",
         "llm_cost_by_stage",
         "api_error",
         "eval_timestamp",
@@ -151,6 +153,8 @@ def save_results(records: list[dict], output_prefix: str) -> None:
             row = dict(rec)
             if isinstance(row.get("llm_calls"), list):
                 row["llm_calls"] = json.dumps(row["llm_calls"], ensure_ascii=False)
+            if isinstance(row.get("unpriced_models"), list):
+                row["unpriced_models"] = ";".join(row["unpriced_models"])
             writer.writerow(row)
 
     benchmark_rows = []
@@ -164,6 +168,9 @@ def save_results(records: list[dict], output_prefix: str) -> None:
                 "output_tokens": int(rec.get("output_tokens") or rec.get("llm_completion_tokens") or 0),
                 "total_tokens": int(rec.get("total_tokens") or rec.get("llm_total_tokens") or 0),
                 "estimated_cost_usd": float(rec.get("estimated_cost_usd") or rec.get("llm_cost_usd_estimate") or 0.0),
+                # True: some call used a model with no known price, so the cost above is a lower bound.
+                "cost_is_partial": bool(rec.get("cost_is_partial")),
+                "unpriced_models": ";".join(rec.get("unpriced_models") or []),
             }
         )
 
@@ -180,6 +187,8 @@ def save_results(records: list[dict], output_prefix: str) -> None:
         "output_tokens",
         "total_tokens",
         "estimated_cost_usd",
+        "cost_is_partial",
+        "unpriced_models",
     ]
     with open(benchmark_csv_path, "w", encoding="utf-8", newline="") as f:
         writer = csv.DictWriter(f, fieldnames=benchmark_fields, extrasaction="ignore")
@@ -225,6 +234,8 @@ def run():
                 "llm_completion_tokens": int(result.get("output_tokens") or result.get("llm_completion_tokens") or 0),
                 "llm_total_tokens": int(result.get("total_tokens") or result.get("llm_total_tokens") or 0),
                 "llm_cost_usd_estimate": float(result.get("estimated_cost_usd") or result.get("llm_cost_usd_estimate") or 0.0),
+                "cost_is_partial": bool(result.get("cost_is_partial") or result.get("llm_cost_is_partial")),
+                "unpriced_models": list(result.get("unpriced_models") or []),
                 "api_error": None,
                 "eval_timestamp": datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
             }
@@ -243,6 +254,8 @@ def run():
                 "output_tokens": 0,
                 "total_tokens": 0,
                 "estimated_cost_usd": 0.0,
+                "cost_is_partial": False,
+                "unpriced_models": [],
                 "llm_calls": [],
                 "api_error": str(exc),
                 "eval_timestamp": datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
