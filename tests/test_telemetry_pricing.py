@@ -92,5 +92,60 @@ class Finalize(unittest.TestCase):
         self.assertFalse(r["cost_is_partial"])
 
 
+class EvalExport(unittest.TestCase):
+    """eval_rag exports must not present a partial cost as a complete one."""
+
+    def _export(self, records):
+        import csv
+        import json
+        import tempfile
+
+        import eval_rag
+
+        with tempfile.TemporaryDirectory() as d:
+            prefix = str(Path(d) / "out")
+            eval_rag.save_results(records, prefix)
+            with open(prefix + ".csv", encoding="utf-8") as f:
+                main_rows = list(csv.DictReader(f))
+            with open(str(Path(d) / "benchmark_results.csv"), encoding="utf-8") as f:
+                bench_rows = list(csv.DictReader(f))
+            with open(str(Path(d) / "benchmark_results.json"), encoding="utf-8") as f:
+                bench_json = json.load(f)
+        return main_rows, bench_rows, bench_json
+
+    def _rec(self, partial, models):
+        return {
+            "question_id": "1", "retrieval_mode": "x", "runtime_seconds": 1.0,
+            "input_tokens": 10, "output_tokens": 5, "total_tokens": 15,
+            "estimated_cost_usd": 0.001, "llm_calls": [],
+            "cost_is_partial": partial, "unpriced_models": models,
+        }
+
+    def test_benchmark_csv_marks_partial_and_names_models(self):
+        _, bench, _ = self._export([self._rec(True, ["openai:gpt-6.1-sol"])])
+        self.assertEqual(bench[0]["cost_is_partial"], "True")
+        self.assertEqual(bench[0]["unpriced_models"], "openai:gpt-6.1-sol")
+
+    def test_benchmark_csv_complete_row_not_partial(self):
+        _, bench, _ = self._export([self._rec(False, [])])
+        self.assertEqual(bench[0]["cost_is_partial"], "False")
+        self.assertEqual(bench[0]["unpriced_models"], "")
+
+    def test_main_csv_has_flag_columns_and_joined_models(self):
+        main, _, _ = self._export([self._rec(True, ["a:x", "b:y"])])
+        self.assertEqual(main[0]["cost_is_partial"], "True")
+        self.assertEqual(main[0]["unpriced_models"], "a:x;b:y")
+
+    def test_benchmark_json_flag_is_boolean(self):
+        _, _, js = self._export([self._rec(True, ["a:x"])])
+        self.assertIs(js[0]["cost_is_partial"], True)
+
+    def test_old_records_without_flag_default_to_not_partial(self):
+        rec = self._rec(False, [])
+        rec.pop("cost_is_partial"); rec.pop("unpriced_models")
+        _, bench, _ = self._export([rec])
+        self.assertEqual(bench[0]["cost_is_partial"], "False")
+
+
 if __name__ == "__main__":
     unittest.main()
