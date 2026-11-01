@@ -124,6 +124,23 @@ def _normalize_usage(usage: Any) -> Dict[str, int]:
     }
 
 
+def _lookup_rates(provider: str, model: str) -> Optional[Dict[str, float]]:
+    """Return per-1K rates, or None when the model has no known price.
+
+    Unknown models are NOT treated as free. Only providers that define a
+    ``__default__`` entry (ollama, local models) fall back to it.
+    """
+    p = (provider or "").strip().lower()
+    m = (model or "").strip()
+    models = _PRICING_PER_1K.get(p, {})
+    if m in models and m != "__default__":
+        return models[m]
+    for key, rates in models.items():
+        if key != "__default__" and m.startswith(key):
+            return rates
+    return models.get("__default__")
+
+
 def _resolve_rates(provider: str, model: str) -> Dict[str, float]:
     p = (provider or "").strip().lower()
     m = (model or "").strip()
@@ -277,11 +294,19 @@ def record_llm_call(
             if tokens["total_tokens"] == 0:
                 tokens["total_tokens"] = tokens["input_tokens"] + tokens["output_tokens"]
 
-            rates = _resolve_rates(provider, model)
-            call_cost = (
-                (tokens["input_tokens"] / 1000.0) * rates["input"]
-                + (tokens["output_tokens"] / 1000.0) * rates["output"]
-            )
+            rates = _lookup_rates(provider, model)
+            priced = rates is not None
+            if priced:
+                call_cost = (
+                    (tokens["input_tokens"] / 1000.0) * rates["input"]
+                    + (tokens["output_tokens"] / 1000.0) * rates["output"]
+                )
+            else:
+                # No price known: do not invent one and do not report it as free.
+                call_cost = 0.0
+                state["unpriced_models"] = sorted(
+                    set(state.get("unpriced_models", [])) | {f"{provider}:{model}"}
+                )
             lifecycle_stage = _LIFECYCLE_STAGE_CTX.get() or "Unscoped"
 
             state["input_tokens"] += tokens["input_tokens"]
@@ -298,7 +323,8 @@ def record_llm_call(
                     "input_tokens": tokens["input_tokens"],
                     "output_tokens": tokens["output_tokens"],
                     "total_tokens": tokens["total_tokens"],
-                    "estimated_cost_usd": round(call_cost, 8),
+                    "estimated_cost_usd": round(call_cost, 8) if priced else None,
+                    "priced": priced,
                 }
             )
             lifecycle = state.get("lifecycle", {})
@@ -350,6 +376,10 @@ def finalize_request(request_id: str) -> Dict[str, Any]:
             "output_tokens": int(state.get("output_tokens", 0)),
             "total_tokens": int(state.get("total_tokens", 0)),
             "estimated_cost_usd": round(float(state.get("estimated_cost_usd", 0.0)), 8),
+            # True when at least one call used a model with no known price; the
+            # cost above then covers priced calls only (a lower bound).
+            "cost_is_partial": bool(state.get("unpriced_models")),
+            "unpriced_models": list(state.get("unpriced_models", [])),
             "llm_calls": list(state.get("llm_calls", [])),
             "lifecycle": lifecycle,
         }
