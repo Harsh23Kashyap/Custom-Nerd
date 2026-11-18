@@ -12,11 +12,11 @@ This repository is maintained collaboratively by the research team below. All me
 |---|--------|-------------|------|---------|
 | 1 | Harsh Kashyap | Thapar Institute of Engineering and Technology | Lead author | harsh.kashyap2001@gmail.com |
 | 2 | Shela Wu | New York University | Co-author | shela.wu@nyu.edu |
-| 3 | Fengcheng Jiang | New York University | Co-author | fj2080@nyu.edu |
-| 4 | Euijae Kim | New York University | Co-author | ek3955@nyu.edu |
-| 5 | Elyse Herman | McGill University | Co-author | Elyse.herman@desjardins.com |
-| 6 | Jacob Dickman | Rutgers University | Co-author | — |
-| 7 | Daksh Agarwal | Guru Gobind Singh Indraprastha University | Co-author | daksh.10819051623@ipu.ac.in |
+| 3 | Daksh Agarwal | Guru Gobind Singh Indraprastha University | Co-author | daksh.10819051623@ipu.ac.in |
+| 4 | Fengcheng Jiang | New York University | Co-author | fj2080@nyu.edu |
+| 5 | Euijae Kim | New York University | Co-author | ek3955@nyu.edu |
+| 6 | Elyse Herman | McGill University | Co-author | Elyse.herman@desjardins.com |
+| 7 | Jacob Dickman | Rutgers University | Co-author | — |
 | 8 | Dennis Shasha | New York University | Faculty advisor | shasha@cs.nyu.edu |
 
 ### How to cite this work
